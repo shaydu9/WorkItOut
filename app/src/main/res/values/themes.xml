@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme - minimal since we use Compose Material 3 -->
+    <style name="Theme.WorkItOut" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Transparent status bar -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

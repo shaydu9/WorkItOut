@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">WorkItOut</string>
+    <string name="connect_devices">Connect Devices</string>
+    <string name="live_data">Live Data</string>
+    <string name="scan_devices">Scan for Devices</string>
+    <string name="stop_scan">Stop Scan</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="scanning">Scanning...</string>
+    <string name="heart_rate">Heart Rate</string>
+    <string name="power">Power</string>
+    <string name="cadence">Cadence</string>
+    <string name="bpm">bpm</string>
+    <string name="watts">W</string>
+    <string name="rpm">rpm</string>
+    <string name="no_devices_found">No devices found</string>
+    <string name="bluetooth_not_enabled">Bluetooth is not enabled</string>
+    <string name="permissions_required">Bluetooth permissions required</string>
+</resources>
