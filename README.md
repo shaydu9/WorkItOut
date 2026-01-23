@@ -11,6 +11,22 @@ A native Android app for connecting to cycling sensors and performing structured
   - Heart Rate (bpm)
   - Power (watts)
   - Cadence (rpm)
+- ✅ Equipment Profiles
+  - Create profiles for different bikes/setups
+  - Auto-connect to assigned devices
+  - Quick profile switching
+- ✅ Device Management
+  - Save and name BLE devices
+  - Assign devices to profiles
+  - Remember connection preferences
+- ✅ Demo Mode
+  - Realistic simulated cycling data
+  - Test app without physical devices
+  - Interval workout simulation
+  - See [DEMO_MODE.md](DEMO_MODE.md) for details
+- ✅ Customization
+  - Dark/Light/System theme
+  - Power smoothing (1-10 seconds)
 
 ### Phase 2 (Planned)
 - Custom workout creation

@@ -16,14 +16,18 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.ParcelUuid
-import android.util.Log
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.HeartRateData
 import com.cycling.workitout.data.PowerData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * Central BLE manager for scanning, connecting, and managing cycling sensors
@@ -58,9 +62,15 @@ class BleManager(private val context: Context) {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
     
-    companion object {
-        private const val TAG = "BleManager"
-    }
+    // Power smoothing
+    private val powerSmoother = PowerSmoother(smoothingWindowSeconds = 3)
+    
+    // Demo mode with mock data
+    private val mockDataScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val mockDataGenerator = MockDataGenerator(mockDataScope)
+    
+    private val _isDemoMode = MutableStateFlow(false)
+    val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
     
     /**
      * Check if Bluetooth is enabled
@@ -75,12 +85,12 @@ class BleManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startScan() {
         if (_isScanning.value) {
-            Log.d(TAG, "Already scanning")
+            Timber.d( "Already scanning")
             return
         }
         
         if (!isBluetoothEnabled()) {
-            Log.e(TAG, "Bluetooth is not enabled")
+            Timber.e( "Bluetooth is not enabled")
             return
         }
         
@@ -104,7 +114,7 @@ class BleManager(private val context: Context) {
         
         bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
         _isScanning.value = true
-        Log.d(TAG, "Started BLE scan")
+        Timber.d( "Started BLE scan")
     }
     
     /**
@@ -116,7 +126,7 @@ class BleManager(private val context: Context) {
         
         bluetoothLeScanner?.stopScan(scanCallback)
         _isScanning.value = false
-        Log.d(TAG, "Stopped BLE scan")
+        Timber.d( "Stopped BLE scan")
     }
     
     /**
@@ -154,12 +164,12 @@ class BleManager(private val context: Context) {
             if (currentDevices.none { it.address == deviceAddress }) {
                 currentDevices.add(bleDevice)
                 _discoveredDevices.value = currentDevices
-                Log.d(TAG, "Discovered device: $deviceName ($deviceType)")
+                Timber.d( "Discovered device: $deviceName ($deviceType)")
             }
         }
         
         override fun onScanFailed(errorCode: Int) {
-            Log.e(TAG, "Scan failed with error: $errorCode")
+            Timber.e( "Scan failed with error: $errorCode")
             _isScanning.value = false
         }
     }
@@ -170,13 +180,13 @@ class BleManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun connectHeartRateMonitor(bleDevice: BleDevice) {
         if (bleDevice.deviceType != DeviceType.HEART_RATE_MONITOR) {
-            Log.e(TAG, "Device is not a heart rate monitor")
+            Timber.e( "Device is not a heart rate monitor")
             return
         }
         
         heartRateGatt?.close()
         heartRateGatt = bleDevice.device.connectGatt(context, false, heartRateGattCallback)
-        Log.d(TAG, "Connecting to heart rate monitor: ${bleDevice.name}")
+        Timber.d( "Connecting to heart rate monitor: ${bleDevice.name}")
     }
     
     /**
@@ -185,13 +195,51 @@ class BleManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun connectPowerMeter(bleDevice: BleDevice) {
         if (bleDevice.deviceType != DeviceType.POWER_METER) {
-            Log.e(TAG, "Device is not a power meter")
+            Timber.e( "Device is not a power meter")
             return
         }
         
         powerMeterGatt?.close()
         powerMeterGatt = bleDevice.device.connectGatt(context, false, powerMeterGattCallback)
-        Log.d(TAG, "Connecting to power meter: ${bleDevice.name}")
+        Timber.d( "Connecting to power meter: ${bleDevice.name}")
+    }
+    
+    /**
+     * Reconnect to a heart rate monitor using MAC address
+     */
+    @SuppressLint("MissingPermission")
+    fun reconnectHeartRateMonitor(macAddress: String) {
+        try {
+            val device = bluetoothAdapter?.getRemoteDevice(macAddress)
+            if (device != null) {
+                heartRateGatt?.close()
+                heartRateGatt = device.connectGatt(context, false, heartRateGattCallback)
+                Timber.d( "Reconnecting to heart rate monitor: $macAddress")
+            } else {
+                Timber.e( "Bluetooth adapter not available")
+            }
+        } catch (e: IllegalArgumentException) {
+            Timber.e( "Invalid MAC address: $macAddress", e)
+        }
+    }
+    
+    /**
+     * Reconnect to a power meter using MAC address
+     */
+    @SuppressLint("MissingPermission")
+    fun reconnectPowerMeter(macAddress: String) {
+        try {
+            val device = bluetoothAdapter?.getRemoteDevice(macAddress)
+            if (device != null) {
+                powerMeterGatt?.close()
+                powerMeterGatt = device.connectGatt(context, false, powerMeterGattCallback)
+                Timber.d( "Reconnecting to power meter: $macAddress")
+            } else {
+                Timber.e( "Bluetooth adapter not available")
+            }
+        } catch (e: IllegalArgumentException) {
+            Timber.e( "Invalid MAC address: $macAddress", e)
+        }
     }
     
     /**
@@ -203,7 +251,7 @@ class BleManager(private val context: Context) {
         heartRateGatt?.close()
         heartRateGatt = null
         _isHeartRateConnected.value = false
-        Log.d(TAG, "Disconnected heart rate monitor")
+        Timber.d( "Disconnected heart rate monitor")
     }
     
     /**
@@ -221,7 +269,115 @@ class BleManager(private val context: Context) {
         previousCrankRevolutions = 0
         previousCrankEventTime = 0
         
-        Log.d(TAG, "Disconnected power meter")
+        // Clear power smoothing data
+        powerSmoother.clear()
+        
+        Timber.d( "Disconnected power meter")
+    }
+    
+    /**
+     * Set power smoothing window in seconds
+     */
+    fun setPowerSmoothingWindow(seconds: Int) {
+        powerSmoother.setSmoothingWindow(seconds)
+        Timber.d( "Power smoothing window set to $seconds seconds")
+    }
+    
+    /**
+     * Get current power smoothing window in seconds
+     */
+    fun getPowerSmoothingWindow(): Int {
+        return powerSmoother.getSmoothingWindow()
+    }
+    
+    /**
+     * Enable demo mode with simulated data
+     */
+    fun enableDemoMode() {
+        if (_isDemoMode.value) return
+        
+        Timber.d( "Enabling demo mode")
+        _isDemoMode.value = true
+        
+        // Mark as connected
+        _isHeartRateConnected.value = true
+        _isPowerMeterConnected.value = true
+        
+        // Start mock data generation
+        mockDataGenerator.start()
+        
+        // Collect and forward mock data to state flows
+        mockDataScope.launch {
+            mockDataGenerator.heartRateData.collect { mockHr ->
+                if (_isDemoMode.value) {
+                    _heartRateData.value = mockHr
+                }
+            }
+        }
+        
+        mockDataScope.launch {
+            mockDataGenerator.powerData.collect { mockPower ->
+                if (_isDemoMode.value) {
+                    // Apply power smoothing to demo data too
+                    val smoothedPower = powerSmoother.addReading(mockPower.power)
+                    _powerData.value = PowerData(smoothedPower, mockPower.cadence)
+                }
+            }
+        }
+    }
+    
+    /**
+     * Disable demo mode
+     */
+    fun disableDemoMode() {
+        if (!_isDemoMode.value) return
+        
+        Timber.d( "Disabling demo mode")
+        _isDemoMode.value = false
+        
+        // Stop mock data generation
+        mockDataGenerator.stop()
+        
+        // Reset connection states
+        _isHeartRateConnected.value = false
+        _isPowerMeterConnected.value = false
+        
+        // Clear data
+        _heartRateData.value = HeartRateData(0)
+        _powerData.value = PowerData(0, 0)
+        
+        // Clear power smoother
+        powerSmoother.clear()
+    }
+    
+    /**
+     * Get demo mode workout phase description
+     */
+    fun getDemoPhaseDescription(): String {
+        return if (_isDemoMode.value) {
+            mockDataGenerator.getCurrentPhaseDescription()
+        } else {
+            ""
+        }
+    }
+    
+    /**
+     * Get demo mode elapsed time
+     */
+    fun getDemoElapsedTime(): String {
+        return if (_isDemoMode.value) {
+            mockDataGenerator.getElapsedTimeFormatted()
+        } else {
+            "00:00"
+        }
+    }
+    
+    fun getDemoElapsedSeconds(): Int {
+        return if (_isDemoMode.value) {
+            mockDataGenerator.getElapsedSeconds()
+        } else {
+            0
+        }
     }
     
     /**
@@ -232,12 +388,12 @@ class BleManager(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Log.d(TAG, "Heart rate monitor connected")
+                    Timber.d( "Heart rate monitor connected")
                     _isHeartRateConnected.value = true
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.d(TAG, "Heart rate monitor disconnected")
+                    Timber.d( "Heart rate monitor disconnected")
                     _isHeartRateConnected.value = false
                 }
             }
@@ -256,7 +412,7 @@ class BleManager(private val context: Context) {
                     descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
                     
-                    Log.d(TAG, "Enabled heart rate notifications")
+                    Timber.d( "Enabled heart rate notifications")
                 }
             }
         }
@@ -266,7 +422,7 @@ class BleManager(private val context: Context) {
             if (characteristic.uuid == BleConstants.HEART_RATE_MEASUREMENT_CHAR_UUID) {
                 val heartRate = parseHeartRate(characteristic)
                 _heartRateData.value = HeartRateData(heartRate)
-                Log.d(TAG, "Heart rate: $heartRate bpm")
+                Timber.d( "Heart rate: $heartRate bpm")
             }
         }
     }
@@ -279,12 +435,12 @@ class BleManager(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Log.d(TAG, "Power meter connected")
+                    Timber.d( "Power meter connected")
                     _isPowerMeterConnected.value = true
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.d(TAG, "Power meter disconnected")
+                    Timber.d( "Power meter disconnected")
                     _isPowerMeterConnected.value = false
                 }
             }
@@ -303,7 +459,7 @@ class BleManager(private val context: Context) {
                     descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
                     
-                    Log.d(TAG, "Enabled power meter notifications")
+                    Timber.d( "Enabled power meter notifications")
                 }
             }
         }
@@ -313,7 +469,7 @@ class BleManager(private val context: Context) {
             if (characteristic.uuid == BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID) {
                 val (power, cadence) = parsePowerMeasurement(characteristic)
                 _powerData.value = PowerData(power, cadence)
-                Log.d(TAG, "Power: $power W, Cadence: $cadence rpm")
+                Timber.d( "Power: $power W, Cadence: $cadence rpm")
             }
         }
     }
@@ -351,7 +507,7 @@ class BleManager(private val context: Context) {
         val value = characteristic.value ?: return Pair(0, 0)
         
         if (value.size < 4) {
-            Log.w(TAG, "Power measurement data too short: ${value.size} bytes")
+            Timber.w( "Power measurement data too short: ${value.size} bytes")
             return Pair(0, 0)
         }
         
@@ -361,7 +517,7 @@ class BleManager(private val context: Context) {
         // Next two bytes contain instantaneous power (signed 16-bit, little-endian)
         val power = (value[2].toInt() and 0xFF) or ((value[3].toInt() and 0xFF) shl 8)
         
-        Log.d(TAG, "Power flags: 0x${flags.toString(16)}, Power: $power W, Data size: ${value.size} bytes")
+        Timber.d( "Power flags: 0x${flags.toString(16)}, Power: $power W, Data size: ${value.size} bytes")
         
         var cadence = 0
         var offset = 4 // Start after power field
@@ -412,7 +568,7 @@ class BleManager(private val context: Context) {
                     
                     // Sanity check (cadence should be 0-250 RPM for cycling)
                     if (cadence < 0 || cadence > 250) {
-                        Log.w(TAG, "Cadence out of range: $cadence, resetting")
+                        Timber.w( "Cadence out of range: $cadence, resetting")
                         cadence = 0
                     }
                 }
@@ -423,12 +579,16 @@ class BleManager(private val context: Context) {
             previousCrankRevolutions = crankRevolutions
             previousCrankEventTime = crankEventTime
             
-            Log.d(TAG, "Crank data - Revolutions: $crankRevolutions, Time: $crankEventTime, Cadence: $cadence RPM")
+            Timber.d( "Crank data - Revolutions: $crankRevolutions, Time: $crankEventTime, Cadence: $cadence RPM")
         } else {
-            Log.d(TAG, "No crank revolution data in this measurement (flags: 0x${flags.toString(16)})")
+            Timber.d( "No crank revolution data in this measurement (flags: 0x${flags.toString(16)})")
         }
         
-        return Pair(power, cadence)
+        // Apply power smoothing
+        val smoothedPower = powerSmoother.addReading(power)
+        Timber.d( "Raw power: $power W, Smoothed power: $smoothedPower W (${powerSmoother.getSmoothingWindow()}s average)")
+        
+        return Pair(smoothedPower, cadence)
     }
     
     /**

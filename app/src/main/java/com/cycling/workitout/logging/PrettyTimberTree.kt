@@ -1,0 +1,88 @@
+package com.cycling.workitout.logging
+
+import android.util.Log
+import timber.log.Timber
+
+/**
+ * Custom Timber tree with elegant formatting and emojis
+ */
+class PrettyTimberTree : Timber.DebugTree() {
+    
+    companion object {
+        private const val CALL_STACK_INDEX = 5
+        private const val MAX_TAG_LENGTH = 23
+        private const val MAX_LOG_LENGTH = 4000
+        
+        // Color codes for different log levels
+        private const val COLOR_VERBOSE = "\u001B[37m"   // White
+        private const val COLOR_DEBUG = "\u001B[36m"     // Cyan
+        private const val COLOR_INFO = "\u001B[32m"      // Green
+        private const val COLOR_WARN = "\u001B[33m"      // Yellow
+        private const val COLOR_ERROR = "\u001B[31m"     // Red
+        private const val COLOR_RESET = "\u001B[0m"      // Reset
+        
+        // Elegant emojis for different log levels
+        private const val EMOJI_VERBOSE = "💬"
+        private const val EMOJI_DEBUG = "🔍"
+        private const val EMOJI_INFO = "✓"
+        private const val EMOJI_WARN = "⚠️"
+        private const val EMOJI_ERROR = "❌"
+        
+        // Component-specific emojis (tasteful selection)
+        private val componentEmojis = mapOf(
+            "BleManager" to "📡",
+            "MockDataGenerator" to "🎮",
+            "ProfileDetailVM" to "🚴",
+            "ProfilesViewModel" to "📋",
+            "ConnectionViewModel" to "🔗",
+            "SettingsViewModel" to "⚙️",
+            "DeviceRepository" to "💾",
+            "ProfileRepository" to "📦",
+            "WorkItOutDatabase" to "🗄️"
+        )
+    }
+    
+    override fun createStackElementTag(element: StackTraceElement): String {
+        val tag = super.createStackElementTag(element) ?: "WorkItOut"
+        
+        // Find component emoji if available
+        val emoji = componentEmojis.entries.find { 
+            tag.contains(it.key, ignoreCase = true) 
+        }?.value ?: ""
+        
+        return if (emoji.isNotEmpty()) {
+            "$emoji $tag"
+        } else {
+            tag
+        }.take(MAX_TAG_LENGTH)
+    }
+    
+    override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+        // Get the emoji and color based on log level
+        val emoji = when (priority) {
+            Log.VERBOSE -> EMOJI_VERBOSE
+            Log.DEBUG -> EMOJI_DEBUG
+            Log.INFO -> EMOJI_INFO
+            Log.WARN -> EMOJI_WARN
+            Log.ERROR -> EMOJI_ERROR
+            else -> ""
+        }
+        
+        // Format: "emoji [Tag] message"
+        val formattedMessage = "$emoji $message"
+        
+        // Split long messages
+        if (formattedMessage.length > MAX_LOG_LENGTH) {
+            val chunks = formattedMessage.chunked(MAX_LOG_LENGTH)
+            chunks.forEachIndexed { index, chunk ->
+                val prefix = if (index > 0) "   ↳ " else ""
+                super.log(priority, tag, prefix + chunk, null)
+            }
+            if (t != null) {
+                super.log(priority, tag, "", t)
+            }
+        } else {
+            super.log(priority, tag, formattedMessage, t)
+        }
+    }
+}
