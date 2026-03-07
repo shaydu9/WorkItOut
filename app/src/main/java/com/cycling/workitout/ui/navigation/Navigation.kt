@@ -26,6 +26,8 @@ import com.cycling.workitout.ui.profiles.ProfilesScreen
 import com.cycling.workitout.ui.profiles.ProfilesViewModel
 import com.cycling.workitout.ui.settings.SettingsScreen
 import com.cycling.workitout.ui.user.UserProfileScreen
+import com.cycling.workitout.ui.workout.WorkoutScreen
+import com.cycling.workitout.ui.workout.WorkoutViewModel
 import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
@@ -35,6 +37,7 @@ sealed class Screen(val route: String) {
     object ProfileDetail : Screen("profile_detail/{profileId}") {
         fun createRoute(profileId: String) = "profile_detail/$profileId"
     }
+    object Workout : Screen("workout")
     object Settings : Screen("settings")
     object UserProfile : Screen("user_profile")
 }
@@ -54,6 +57,12 @@ fun WorkItOutNavigation(bleManager: BleManager) {
     val scope = rememberCoroutineScope()
     
     val drawerItems = listOf(
+        DrawerItem(
+            route = Screen.Workout.route,
+            title = "Workout",
+            icon = Icons.Default.FitnessCenter,
+            description = "Structured training"
+        ),
         DrawerItem(
             route = Screen.Connection.route,
             title = "Connect Devices",
@@ -136,6 +145,17 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 )
             }
             
+            composable(Screen.Workout.route) {
+                currentRoute = Screen.Workout.route
+                val viewModel = remember { WorkoutViewModel(bleManager) }
+                WorkoutScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
             composable(Screen.LiveData.route) {
                 val viewModel = LiveDataViewModel(bleManager)
                 LiveDataScreen(

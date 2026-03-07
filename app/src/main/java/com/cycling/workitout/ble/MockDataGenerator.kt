@@ -22,6 +22,9 @@ class MockDataGenerator(private val scope: CoroutineScope) {
     private var mockDataJob: Job? = null
     private var elapsedSeconds = 0
     
+    // External target power (set by workout engine for realistic demo data)
+    private var externalTargetPower: Int? = null
+
     // Simulated workout state
     private var baseHeartRate = 120 // Base HR around threshold
     private var basePower = 200 // Base power around FTP
@@ -68,34 +71,68 @@ class MockDataGenerator(private val scope: CoroutineScope) {
     }
     
     /**
+     * Set external target power (used by workout engine in demo mode)
+     */
+    fun setTargetPower(watts: Int) {
+        externalTargetPower = watts
+    }
+
+    /**
+     * Clear external target power (revert to internal phase-based generation)
+     */
+    fun clearTargetPower() {
+        externalTargetPower = null
+    }
+
+    /**
      * Generate realistic cycling data with variations
      * Simulates intervals, fatigue, and natural variations
      */
     private fun generateRealisticData() {
-        // Create workout phases with intervals
-        val workoutPhase = (elapsedSeconds / 30) % 4 // 30-second phases
-        
-        // Adjust base values based on workout phase
-        when (workoutPhase) {
-            0 -> { // Easy/recovery
-                baseHeartRate = 110
-                basePower = 150
-                baseCadence = 75
+        val targetPower = externalTargetPower
+
+        if (targetPower != null) {
+            // Workout-driven mode: generate data around the target power
+            basePower = targetPower
+            baseCadence = when {
+                targetPower < 140 -> 75
+                targetPower < 200 -> 82
+                targetPower < 280 -> 90
+                targetPower < 350 -> 95
+                else -> 100
             }
-            1 -> { // Moderate
-                baseHeartRate = 135
-                basePower = 220
-                baseCadence = 88
+            baseHeartRate = when {
+                targetPower < 140 -> 110
+                targetPower < 200 -> 130
+                targetPower < 280 -> 150
+                targetPower < 350 -> 170
+                else -> 180
             }
-            2 -> { // Hard interval
-                baseHeartRate = 165
-                basePower = 300
-                baseCadence = 95
-            }
-            3 -> { // Sprint!
-                baseHeartRate = 175
-                basePower = 380
-                baseCadence = 105
+        } else {
+            // Internal phase-based generation (original behavior)
+            val workoutPhase = (elapsedSeconds / 30) % 4 // 30-second phases
+
+            when (workoutPhase) {
+                0 -> { // Easy/recovery
+                    baseHeartRate = 110
+                    basePower = 150
+                    baseCadence = 75
+                }
+                1 -> { // Moderate
+                    baseHeartRate = 135
+                    basePower = 220
+                    baseCadence = 88
+                }
+                2 -> { // Hard interval
+                    baseHeartRate = 165
+                    basePower = 300
+                    baseCadence = 95
+                }
+                3 -> { // Sprint!
+                    baseHeartRate = 175
+                    basePower = 380
+                    baseCadence = 105
+                }
             }
         }
         

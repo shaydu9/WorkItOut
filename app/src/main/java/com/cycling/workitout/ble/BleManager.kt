@@ -40,6 +40,8 @@ class BleManager(private val context: Context) {
     
     private var heartRateGatt: BluetoothGatt? = null
     private var powerMeterGatt: BluetoothGatt? = null
+    private var trainerGatt: BluetoothGatt? = null
+    private var ftmsControlPointChar: BluetoothGattCharacteristic? = null
     
     // State flows for discovered devices
     private val _discoveredDevices = MutableStateFlow<List<BleDevice>>(emptyList())
@@ -51,6 +53,12 @@ class BleManager(private val context: Context) {
     
     private val _isPowerMeterConnected = MutableStateFlow(false)
     val isPowerMeterConnected: StateFlow<Boolean> = _isPowerMeterConnected.asStateFlow()
+
+    private val _isTrainerConnected = MutableStateFlow(false)
+    val isTrainerConnected: StateFlow<Boolean> = _isTrainerConnected.asStateFlow()
+
+    private val _trainerControlAvailable = MutableStateFlow(false)
+    val trainerControlAvailable: StateFlow<Boolean> = _trainerControlAvailable.asStateFlow()
     
     // State flows for sensor data
     private val _heartRateData = MutableStateFlow(HeartRateData())
@@ -276,6 +284,110 @@ class BleManager(private val context: Context) {
     }
     
     /**
+     * Connect to a smart trainer (FTMS)
+     */
+    @SuppressLint("MissingPermission")
+    fun connectTrainer(bleDevice: BleDevice) {
+        if (bleDevice.deviceType != DeviceType.SMART_TRAINER) {
+            Timber.e("Device is not a smart trainer")
+            return
+        }
+
+        trainerGatt?.close()
+        trainerGatt = bleDevice.device.connectGatt(context, false, trainerGattCallback)
+        Timber.d("Connecting to smart trainer: ${bleDevice.name}")
+    }
+
+    /**
+     * Reconnect to a smart trainer using MAC address
+     */
+    @SuppressLint("MissingPermission")
+    fun reconnectTrainer(macAddress: String) {
+        try {
+            val device = bluetoothAdapter?.getRemoteDevice(macAddress)
+            if (device != null) {
+                trainerGatt?.close()
+                trainerGatt = device.connectGatt(context, false, trainerGattCallback)
+                Timber.d("Reconnecting to smart trainer: $macAddress")
+            } else {
+                Timber.e("Bluetooth adapter not available")
+            }
+        } catch (e: IllegalArgumentException) {
+            Timber.e("Invalid MAC address: $macAddress", e)
+        }
+    }
+
+    /**
+     * Disconnect smart trainer
+     */
+    @SuppressLint("MissingPermission")
+    fun disconnectTrainer() {
+        trainerGatt?.disconnect()
+        trainerGatt?.close()
+        trainerGatt = null
+        ftmsControlPointChar = null
+        _isTrainerConnected.value = false
+        _trainerControlAvailable.value = false
+        Timber.d("Disconnected smart trainer")
+    }
+
+    /**
+     * Request control of the FTMS trainer
+     */
+    fun requestFtmsControl() {
+        writeFtmsControlPoint(byteArrayOf(BleConstants.FTMS_REQUEST_CONTROL))
+    }
+
+    /**
+     * Start or resume the FTMS workout
+     */
+    fun startFtmsWorkout() {
+        writeFtmsControlPoint(byteArrayOf(BleConstants.FTMS_START_RESUME))
+    }
+
+    /**
+     * Stop the FTMS workout
+     */
+    fun stopFtmsWorkout() {
+        writeFtmsControlPoint(byteArrayOf(BleConstants.FTMS_STOP_PAUSE, 0x01)) // 0x01 = Stop
+    }
+
+    /**
+     * Set target power on the trainer (ERG mode)
+     */
+    fun setTargetPower(watts: Int) {
+        val data = byteArrayOf(
+            BleConstants.FTMS_SET_TARGET_POWER,
+            (watts and 0xFF).toByte(),
+            ((watts shr 8) and 0xFF).toByte()
+        )
+        writeFtmsControlPoint(data)
+        Timber.d("Set target power: $watts W")
+    }
+
+    /**
+     * Set target power for demo mode (mock data follows this target)
+     */
+    fun setDemoTargetPower(watts: Int) {
+        if (_isDemoMode.value) {
+            mockDataGenerator.setTargetPower(watts)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeFtmsControlPoint(data: ByteArray) {
+        val char = ftmsControlPointChar
+        val gatt = trainerGatt
+        if (char == null || gatt == null) {
+            Timber.w("FTMS control point not available")
+            return
+        }
+        char.value = data
+        val success = gatt.writeCharacteristic(char)
+        Timber.d("FTMS write (opcode 0x${data[0].toString(16)}): success=$success")
+    }
+
+    /**
      * Set power smoothing window in seconds
      */
     fun setPowerSmoothingWindow(seconds: Int) {
@@ -302,7 +414,9 @@ class BleManager(private val context: Context) {
         // Mark as connected
         _isHeartRateConnected.value = true
         _isPowerMeterConnected.value = true
-        
+        _isTrainerConnected.value = true
+        _trainerControlAvailable.value = true
+
         // Start mock data generation
         mockDataGenerator.start()
         
@@ -341,7 +455,12 @@ class BleManager(private val context: Context) {
         // Reset connection states
         _isHeartRateConnected.value = false
         _isPowerMeterConnected.value = false
-        
+        _isTrainerConnected.value = false
+        _trainerControlAvailable.value = false
+
+        // Clear mock target power
+        mockDataGenerator.clearTargetPower()
+
         // Clear data
         _heartRateData.value = HeartRateData(0)
         _powerData.value = PowerData(0, 0)
@@ -475,6 +594,185 @@ class BleManager(private val context: Context) {
     }
     
     /**
+     * GATT callback for smart trainer (FTMS)
+     */
+    private val trainerGattCallback = object : BluetoothGattCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            when (newState) {
+                BluetoothProfile.STATE_CONNECTED -> {
+                    Timber.d("Smart trainer connected")
+                    _isTrainerConnected.value = true
+                    gatt.discoverServices()
+                }
+                BluetoothProfile.STATE_DISCONNECTED -> {
+                    Timber.d("Smart trainer disconnected")
+                    _isTrainerConnected.value = false
+                    _trainerControlAvailable.value = false
+                    ftmsControlPointChar = null
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) return
+
+            val ftmsService = gatt.getService(BleConstants.FITNESS_MACHINE_SERVICE_UUID)
+            if (ftmsService == null) {
+                Timber.e("FTMS service not found on trainer")
+                return
+            }
+
+            // Subscribe to Indoor Bike Data notifications
+            ftmsService.getCharacteristic(BleConstants.INDOOR_BIKE_DATA_CHAR_UUID)?.let { char ->
+                gatt.setCharacteristicNotification(char, true)
+                val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(descriptor)
+                Timber.d("Enabled Indoor Bike Data notifications")
+            }
+
+            // Cache the FTMS Control Point characteristic
+            ftmsService.getCharacteristic(BleConstants.FTMS_CONTROL_POINT_CHAR_UUID)?.let { char ->
+                ftmsControlPointChar = char
+                _trainerControlAvailable.value = true
+
+                // Enable indications on control point (uses INDICATION, not NOTIFICATION)
+                gatt.setCharacteristicNotification(char, true)
+                val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                descriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+                // Will write after bike data descriptor write completes
+                Timber.d("FTMS Control Point cached, indications pending")
+            }
+
+            // Also try to get power/cadence from Cycling Power Service if available
+            val cpsService = gatt.getService(BleConstants.CYCLING_POWER_SERVICE_UUID)
+            cpsService?.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID)?.let { char ->
+                gatt.setCharacteristicNotification(char, true)
+                Timber.d("Trainer also exposes Cycling Power Service")
+            }
+        }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            // After Indoor Bike Data descriptor is written, write Control Point descriptor
+            if (descriptor.characteristic.uuid == BleConstants.INDOOR_BIKE_DATA_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
+                ftmsControlPointChar?.let { cpChar ->
+                    val cpDescriptor = cpChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                    cpDescriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+                    @SuppressLint("MissingPermission")
+                    val written = gatt.writeDescriptor(cpDescriptor)
+                    Timber.d("Writing FTMS Control Point indication descriptor: $written")
+                }
+            }
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            when (characteristic.uuid) {
+                BleConstants.INDOOR_BIKE_DATA_CHAR_UUID -> {
+                    parseIndoorBikeData(characteristic)
+                }
+                BleConstants.FTMS_CONTROL_POINT_CHAR_UUID -> {
+                    val value = characteristic.value ?: return
+                    if (value.isNotEmpty()) {
+                        Timber.d("FTMS Control Point response: opcode=0x${value[0].toString(16)}")
+                    }
+                }
+                BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID -> {
+                    val (power, cadence) = parsePowerMeasurement(characteristic)
+                    _powerData.value = PowerData(power, cadence)
+                }
+            }
+        }
+    }
+
+    /**
+     * Parse Indoor Bike Data characteristic (0x2AD2)
+     * Updates power and cadence flows from trainer-reported data
+     */
+    private fun parseIndoorBikeData(characteristic: BluetoothGattCharacteristic) {
+        val value = characteristic.value ?: return
+        if (value.size < 2) return
+
+        // Flags field is 2 bytes (little-endian)
+        val flags = ((value[1].toInt() and 0xFF) shl 8) or (value[0].toInt() and 0xFF)
+        var offset = 2
+
+        // Bit 0: More Data (0 = not present, field order differs from typical)
+        // Indoor Bike Data fields are present when their flag bit is 0 (inverted for some)
+
+        // Instantaneous Speed (bit 0 = 0 means present) - uint16, 0.01 km/h
+        if (flags and 0x01 == 0 && value.size >= offset + 2) {
+            offset += 2 // Skip speed
+        }
+
+        // Average Speed (bit 1) - uint16
+        if (flags and 0x02 != 0 && value.size >= offset + 2) {
+            offset += 2
+        }
+
+        // Instantaneous Cadence (bit 2) - uint16, 0.5 rpm
+        var cadence = 0
+        if (flags and 0x04 != 0 && value.size >= offset + 2) {
+            val rawCadence = (value[offset].toInt() and 0xFF) or ((value[offset + 1].toInt() and 0xFF) shl 8)
+            cadence = rawCadence / 2 // Resolution is 0.5 rpm
+            offset += 2
+        }
+
+        // Average Cadence (bit 3)
+        if (flags and 0x08 != 0 && value.size >= offset + 2) {
+            offset += 2
+        }
+
+        // Total Distance (bit 4) - uint24
+        if (flags and 0x10 != 0 && value.size >= offset + 3) {
+            offset += 3
+        }
+
+        // Resistance Level (bit 5) - sint16
+        if (flags and 0x20 != 0 && value.size >= offset + 2) {
+            offset += 2
+        }
+
+        // Instantaneous Power (bit 6) - sint16
+        var power = 0
+        if (flags and 0x40 != 0 && value.size >= offset + 2) {
+            power = (value[offset].toInt() and 0xFF) or ((value[offset + 1].toInt() and 0xFF) shl 8)
+            // Handle sign for sint16
+            if (power > 32767) power -= 65536
+            power = power.coerceAtLeast(0)
+            offset += 2
+        }
+
+        // Average Power (bit 7)
+        if (flags and 0x80 != 0 && value.size >= offset + 2) {
+            offset += 2
+        }
+
+        // Apply power smoothing and update flows
+        if (power > 0 || cadence > 0) {
+            val smoothedPower = powerSmoother.addReading(power)
+            _powerData.value = PowerData(smoothedPower, cadence)
+            Timber.d("Indoor Bike Data - Power: $power W (smoothed: $smoothedPower), Cadence: $cadence RPM")
+        }
+
+        // Heart Rate (bit 9) - uint8
+        if (flags and 0x0200 != 0 && value.size > offset) {
+            // Skip Expended Energy first (bit 8)
+            if (flags and 0x0100 != 0 && value.size >= offset + 5) {
+                offset += 5 // total energy (uint16) + energy/hr (uint16) + energy/min (uint8)
+            }
+            if (value.size > offset) {
+                val heartRate = value[offset].toInt() and 0xFF
+                if (heartRate > 0) {
+                    _heartRateData.value = HeartRateData(heartRate)
+                }
+            }
+        }
+    }
+
+    /**
      * Parse heart rate from characteristic data
      * Format: https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/
      */
@@ -599,5 +897,6 @@ class BleManager(private val context: Context) {
         stopScan()
         disconnectHeartRateMonitor()
         disconnectPowerMeter()
+        disconnectTrainer()
     }
 }
