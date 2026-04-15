@@ -15,23 +15,39 @@ class SettingsViewModel(
     private val bleManager: BleManager? = null,
     private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences
 ) : ViewModel() {
-    
+
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
-    
+
     val powerSmoothingSeconds: StateFlow<Int> = themePreferences.powerSmoothingSeconds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 3)
-    
+
+    val ftp: StateFlow<Int> = themePreferences.userFtpWatts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
+
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
             themePreferences.setThemeMode(mode)
         }
     }
-    
+
     fun setPowerSmoothingSeconds(seconds: Int) {
         viewModelScope.launch {
             themePreferences.setPowerSmoothingSeconds(seconds)
             bleManager?.setPowerSmoothingWindow(seconds)
+        }
+    }
+
+    fun setFtp(watts: Int) {
+        viewModelScope.launch {
+            themePreferences.setUserFtpWatts(watts)
+        }
+    }
+
+    /** Clear the first-run flag so Navigation routes back to FirstRunPairing. */
+    fun resetFirstRun() {
+        viewModelScope.launch {
+            themePreferences.setHasCompletedFirstRun(false)
         }
     }
 }

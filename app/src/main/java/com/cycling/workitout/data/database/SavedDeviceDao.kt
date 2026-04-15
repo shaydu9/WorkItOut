@@ -16,27 +16,6 @@ interface SavedDeviceDao {
     fun getAllDevices(): Flow<List<SavedDeviceEntity>>
     
     /**
-     * Get devices by profile ID (using junction table)
-     */
-    @Query("""
-        SELECT saved_devices.* FROM saved_devices
-        INNER JOIN device_profile_cross_ref ON saved_devices.macAddress = device_profile_cross_ref.macAddress
-        WHERE device_profile_cross_ref.profileId = :profileId
-        ORDER BY lastConnectedTimestamp DESC
-    """)
-    fun getDevicesByProfile(profileId: String): Flow<List<SavedDeviceEntity>>
-    
-    /**
-     * Get devices not assigned to any profile
-     */
-    @Query("""
-        SELECT * FROM saved_devices
-        WHERE macAddress NOT IN (SELECT macAddress FROM device_profile_cross_ref)
-        ORDER BY lastConnectedTimestamp DESC
-    """)
-    fun getUnassignedDevices(): Flow<List<SavedDeviceEntity>>
-    
-    /**
      * Get device by MAC address
      */
     @Query("SELECT * FROM saved_devices WHERE macAddress = :macAddress")

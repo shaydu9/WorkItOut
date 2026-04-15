@@ -113,6 +113,11 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 viewModel = viewModel,
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onRepairDevices = {
+                    navController.navigate(Screen.FirstRunPairing.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
                 }
             )
         }

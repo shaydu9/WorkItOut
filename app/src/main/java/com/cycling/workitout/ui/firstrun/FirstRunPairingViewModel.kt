@@ -66,7 +66,7 @@ class FirstRunPairingViewModel(
                 else -> Unit
             }
             // Persist so we can auto-reconnect on subsequent launches.
-            deviceRepository.saveDevice(device, emptyList())
+            deviceRepository.saveDevice(device)
         }
     }
 

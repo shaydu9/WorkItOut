@@ -32,12 +32,12 @@ class PrettyTimberTree : Timber.DebugTree() {
         private val componentEmojis = mapOf(
             "BleManager" to "📡",
             "MockDataGenerator" to "🎮",
-            "ProfileDetailVM" to "🚴",
-            "ProfilesViewModel" to "📋",
-            "ConnectionViewModel" to "🔗",
             "SettingsViewModel" to "⚙️",
+            "HomeViewModel" to "🏠",
+            "FirstRunPairingVM" to "🔗",
+            "WorkoutViewModel" to "🏋️",
+            "AiWorkoutService" to "🤖",
             "DeviceRepository" to "💾",
-            "ProfileRepository" to "📦",
             "WorkItOutDatabase" to "🗄️"
         )
     }

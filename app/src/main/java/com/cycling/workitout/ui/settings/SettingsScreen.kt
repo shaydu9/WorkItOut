@@ -2,6 +2,7 @@ package com.cycling.workitout.ui.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -9,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.preferences.ThemeMode
@@ -17,12 +19,16 @@ import com.cycling.workitout.data.preferences.ThemeMode
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = SettingsViewModel(),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onRepairDevices: () -> Unit
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val powerSmoothingSeconds by viewModel.powerSmoothingSeconds.collectAsStateWithLifecycle()
+    val ftp by viewModel.ftp.collectAsStateWithLifecycle()
     var showThemeDialog by remember { mutableStateOf(false) }
     var showPowerSmoothingDialog by remember { mutableStateOf(false) }
+    var showFtpDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -42,74 +48,46 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // General Section
             item {
-                Text(
-                    text = "General",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 8.dp)
+                SectionHeader("Training")
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.FitnessCenter,
+                    title = "FTP",
+                    subtitle = "${ftp}W",
+                    onClick = { showFtpDialog = true }
                 )
             }
-            
+            item {
+                SettingsItem(
+                    icon = Icons.Default.ShowChart,
+                    title = "Power Averaging",
+                    subtitle = "${powerSmoothingSeconds}s average",
+                    onClick = { showPowerSmoothingDialog = true }
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Devices")
+            }
             item {
                 SettingsItem(
                     icon = Icons.Default.Bluetooth,
-                    title = "Bluetooth Settings",
-                    subtitle = "Manage BLE connections",
-                    onClick = { /* TODO */ }
+                    title = "Re-pair devices",
+                    subtitle = "Run the pairing flow again",
+                    onClick = {
+                        viewModel.resetFirstRun()
+                        onRepairDevices()
+                    }
                 )
             }
-            
+
             item {
-                SettingsItem(
-                    icon = Icons.Default.Notifications,
-                    title = "Notifications",
-                    subtitle = "Configure alerts and notifications",
-                    onClick = { /* TODO */ }
-                )
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Display")
             }
-            
-            // Data & Privacy Section
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Data & Privacy",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-            
-            item {
-                SettingsItem(
-                    icon = Icons.Default.CloudUpload,
-                    title = "Data Sync",
-                    subtitle = "Sync workouts to cloud",
-                    onClick = { /* TODO */ }
-                )
-            }
-            
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Security,
-                    title = "Privacy",
-                    subtitle = "Manage your privacy settings",
-                    onClick = { /* TODO */ }
-                )
-            }
-            
-            // Display Section
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Display",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-            
             item {
                 SettingsItem(
                     icon = Icons.Default.Brightness4,
@@ -122,56 +100,21 @@ fun SettingsScreen(
                     onClick = { showThemeDialog = true }
                 )
             }
-            
+
             item {
-                SettingsItem(
-                    icon = Icons.Default.FormatSize,
-                    title = "Units",
-                    subtitle = "Metric / Imperial",
-                    onClick = { /* TODO */ }
-                )
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("About")
             }
-            
-            item {
-                SettingsItem(
-                    icon = Icons.Default.ShowChart,
-                    title = "Power Averaging",
-                    subtitle = "${powerSmoothingSeconds}s average",
-                    onClick = { showPowerSmoothingDialog = true }
-                )
-            }
-            
-            // About Section
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "About",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-            
             item {
                 SettingsItem(
                     icon = Icons.Default.Info,
-                    title = "About WorkItOut",
+                    title = "WorkItOut",
                     subtitle = "Version 1.0.0",
-                    onClick = { /* TODO */ }
-                )
-            }
-            
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Help,
-                    title = "Help & Support",
-                    subtitle = "Get help with the app",
-                    onClick = { /* TODO */ }
+                    onClick = { }
                 )
             }
         }
-        
-        // Theme Selection Dialog
+
         if (showThemeDialog) {
             ThemeSelectionDialog(
                 currentTheme = themeMode,
@@ -182,8 +125,7 @@ fun SettingsScreen(
                 }
             )
         }
-        
-        // Power Smoothing Dialog
+
         if (showPowerSmoothingDialog) {
             PowerSmoothingDialog(
                 currentSeconds = powerSmoothingSeconds,
@@ -194,7 +136,28 @@ fun SettingsScreen(
                 }
             )
         }
+
+        if (showFtpDialog) {
+            FtpDialog(
+                currentFtp = ftp,
+                onDismiss = { showFtpDialog = false },
+                onFtpSelected = { watts ->
+                    viewModel.setFtp(watts)
+                    showFtpDialog = false
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(vertical = 8.dp)
+    )
 }
 
 @Composable
@@ -220,9 +183,7 @@ fun SettingsItem(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)
             )
-            
             Spacer(modifier = Modifier.width(16.dp))
-            
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -235,7 +196,6 @@ fun SettingsItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
@@ -268,33 +228,20 @@ fun ThemeSelectionDialog(
                             onClick = { onThemeSelected(mode) }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = when (mode) {
-                                    ThemeMode.LIGHT -> "Light"
-                                    ThemeMode.DARK -> "Dark"
-                                    ThemeMode.SYSTEM -> "System default"
-                                },
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Text(
-                                text = when (mode) {
-                                    ThemeMode.LIGHT -> "Always use light theme"
-                                    ThemeMode.DARK -> "Always use dark theme"
-                                    ThemeMode.SYSTEM -> "Follow system settings"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = when (mode) {
+                                ThemeMode.LIGHT -> "Light"
+                                ThemeMode.DARK -> "Dark"
+                                ThemeMode.SYSTEM -> "System default"
+                            },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
 }
@@ -305,21 +252,12 @@ fun PowerSmoothingDialog(
     onDismiss: () -> Unit,
     onSecondsSelected: (Int) -> Unit
 ) {
-    // Common power averaging intervals used by cycling computers
     val intervals = listOf(1, 3, 5, 10, 30)
-    
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Power Averaging") },
         text = {
             Column {
-                Text(
-                    text = "Select the averaging window for power readings. Longer windows provide smoother data.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                
                 intervals.forEach { seconds ->
                     Row(
                         modifier = Modifier
@@ -332,32 +270,59 @@ fun PowerSmoothingDialog(
                             onClick = { onSecondsSelected(seconds) }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "${seconds}s average",
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Text(
-                                text = when (seconds) {
-                                    1 -> "Instant power (most responsive)"
-                                    3 -> "Standard (recommended)"
-                                    5 -> "Smooth"
-                                    10 -> "Very smooth"
-                                    30 -> "Normalized power (like FTP tests)"
-                                    else -> ""
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text("${seconds}s average", style = MaterialTheme.typography.bodyLarge)
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@Composable
+fun FtpDialog(
+    currentFtp: Int,
+    onDismiss: () -> Unit,
+    onFtpSelected: (Int) -> Unit
+) {
+    var text by remember { mutableStateOf(currentFtp.toString()) }
+    val parsed = text.toIntOrNull()
+    val valid = parsed != null && parsed in 50..600
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Functional Threshold Power") },
+        text = {
+            Column {
+                Text(
+                    "Your sustainable 1-hour power output. Used to scale AI-generated workouts.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.filter(Char::isDigit).take(3) },
+                    label = { Text("FTP (watts)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = {
+                        if (!valid) Text("Enter a value between 50 and 600")
+                    },
+                    isError = !valid
+                )
             }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = { parsed?.let(onFtpSelected) }
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }
