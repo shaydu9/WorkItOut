@@ -13,6 +13,8 @@ val localProperties = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 val anthropicApiKey: String = localProperties.getProperty("ANTHROPIC_API_KEY", "")
+val stravaClientId: String = localProperties.getProperty("STRAVA_CLIENT_ID", "")
+val stravaClientSecret: String = localProperties.getProperty("STRAVA_CLIENT_SECRET", "")
 
 composeCompiler {
     enableStrongSkippingMode = true
@@ -35,6 +37,8 @@ android {
         }
 
         buildConfigField("String", "ANTHROPIC_API_KEY", "\"$anthropicApiKey\"")
+        buildConfigField("String", "STRAVA_CLIENT_ID", "\"$stravaClientId\"")
+        buildConfigField("String", "STRAVA_CLIENT_SECRET", "\"$stravaClientSecret\"")
     }
 
     buildTypes {
@@ -113,6 +117,10 @@ dependencies {
 
     // Garmin FIT SDK — .fit file writer for Strava-compatible activity export
     implementation("com.garmin:fit:21.176.0")
+
+    // Strava OAuth — Custom Tabs browser + encrypted token storage
+    implementation("androidx.browser:browser:1.8.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     
     // Charts - Vico for professional data visualization
     implementation("com.patrykandpatrick.vico:compose:2.0.0-alpha.28")

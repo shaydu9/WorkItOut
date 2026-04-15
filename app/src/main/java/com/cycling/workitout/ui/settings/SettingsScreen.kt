@@ -9,6 +9,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -25,9 +27,13 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val powerSmoothingSeconds by viewModel.powerSmoothingSeconds.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
+    val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
+    val stravaAthleteName by viewModel.stravaAthleteName.collectAsStateWithLifecycle()
     var showThemeDialog by remember { mutableStateOf(false) }
     var showPowerSmoothingDialog by remember { mutableStateOf(false) }
     var showFtpDialog by remember { mutableStateOf(false) }
+    var showDisconnectStravaDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -80,6 +86,27 @@ fun SettingsScreen(
                     onClick = {
                         viewModel.resetFirstRun()
                         onRepairDevices()
+                    }
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Integrations")
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.CloudUpload,
+                    title = "Strava",
+                    subtitle = if (stravaConnected) {
+                        "Connected${stravaAthleteName?.let { " as $it" } ?: ""}"
+                    } else {
+                        "Not connected — tap to sign in"
+                    },
+                    iconTint = Color(0xFFFC4C02), // Strava orange
+                    onClick = {
+                        if (stravaConnected) showDisconnectStravaDialog = true
+                        else viewModel.connectStrava(context)
                     }
                 )
             }
@@ -147,6 +174,31 @@ fun SettingsScreen(
                 }
             )
         }
+
+        if (showDisconnectStravaDialog) {
+            AlertDialog(
+                onDismissRequest = { showDisconnectStravaDialog = false },
+                title = { Text("Disconnect Strava?") },
+                text = {
+                    Text("You'll need to sign in again to upload future workouts. Previously uploaded rides stay on Strava.")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.disconnectStrava()
+                            showDisconnectStravaDialog = false
+                        }
+                    ) {
+                        Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDisconnectStravaDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -165,7 +217,8 @@ fun SettingsItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    iconTint: Color? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -180,7 +233,7 @@ fun SettingsItem(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = iconTint ?: MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))

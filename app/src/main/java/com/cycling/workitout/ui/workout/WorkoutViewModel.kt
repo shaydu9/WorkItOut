@@ -4,12 +4,14 @@ import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.export.WorkoutExporter
+import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.WorkoutInterval
 import com.cycling.workitout.workout.WorkoutEngine
 import com.cycling.workitout.workout.WorkoutRepository
@@ -25,10 +27,15 @@ import java.io.File
 
 class WorkoutViewModel(
     private val bleManager: BleManager,
-    workoutDefinition: WorkoutDefinition? = null
+    workoutDefinition: WorkoutDefinition? = null,
+    private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository
 ) : ViewModel() {
 
     private val workoutEngine = WorkoutEngine(viewModelScope)
+
+    // ── Strava integration ────────────────────────────────────────────
+    val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
+    val stravaUploadState: StateFlow<StravaRepository.UploadState> = stravaRepository.uploadState
 
     val workoutProgress: StateFlow<WorkoutProgress> = workoutEngine.progress
     val recordedData: StateFlow<List<RecordedDataPoint>> = workoutEngine.recordedData
@@ -73,6 +80,9 @@ class WorkoutViewModel(
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
     init {
+        // Fresh workout session — clear any stale upload result from the last run.
+        stravaRepository.resetUploadState()
+
         val workout = workoutDefinition ?: WorkoutRepository.getDemoWorkout()
         workoutEngine.loadWorkout(workout)
 
@@ -160,6 +170,16 @@ class WorkoutViewModel(
                 _exportState.value = ExportState.Failed(t.message ?: "Export failed")
             }
         }
+    }
+
+    /**
+     * Push the freshly-exported .fit to Strava. No-op unless [exportFitSilently] has
+     * completed and the user is connected. The activity title matches the workout name.
+     */
+    fun uploadExportedFitToStrava() {
+        val ready = _exportState.value as? ExportState.Ready ?: return
+        val workoutName = workoutEngine.workoutDefinition?.name ?: "WorkItOut session"
+        stravaRepository.uploadFit(ready.file, workoutName)
     }
 
     /**

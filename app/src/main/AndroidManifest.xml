@@ -35,10 +35,24 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.WorkItOut">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Strava OAuth redirect. Matches StravaClient.REDIRECT_URI
+                 (workitout://strava-callback) and the Authorization Callback Domain
+                 configured on the Strava developer app. singleTask above ensures the
+                 redirect returns into the existing activity instead of spawning a copy. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="workitout"
+                    android:host="strava-callback" />
             </intent-filter>
         </activity>
 

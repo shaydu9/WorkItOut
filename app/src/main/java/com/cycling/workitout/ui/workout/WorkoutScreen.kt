@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutState
+import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.PowerDataPoint
 import com.cycling.workitout.ui.components.WorkoutInterval
 
@@ -32,6 +33,8 @@ fun WorkoutScreen(
     val recordedData by viewModel.recordedData.collectAsStateWithLifecycle()
     val ergEnabled by viewModel.ergEnabled.collectAsStateWithLifecycle()
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
+    val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
+    val stravaUploadState by viewModel.stravaUploadState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Confirmation dialog state — the Stop button no longer stops immediately;
@@ -113,7 +116,9 @@ fun WorkoutScreen(
                     onStopRequested = { showEndDialog = true },
                     onBack = onNavigateBack,
                     exportState = exportState,
-                    onUploadToStrava = { /* TODO Phase H Half 2 */ }
+                    stravaConnected = stravaConnected,
+                    stravaUploadState = stravaUploadState,
+                    onUploadToStrava = viewModel::uploadExportedFitToStrava
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -355,6 +360,8 @@ private fun ControlBar(
     onStopRequested: () -> Unit,
     onBack: () -> Unit,
     exportState: WorkoutViewModel.ExportState = WorkoutViewModel.ExportState.Idle,
+    stravaConnected: Boolean = false,
+    stravaUploadState: StravaRepository.UploadState = StravaRepository.UploadState.Idle,
     onUploadToStrava: () -> Unit = {}
 ) {
     Row(
@@ -432,18 +439,25 @@ private fun ControlBar(
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
                 val isExporting = exportState is WorkoutViewModel.ExportState.InProgress
+                val exportFailed = exportState is WorkoutViewModel.ExportState.Failed
                 val isReady = exportState is WorkoutViewModel.ExportState.Ready
-                // Strava isn't wired yet (Phase H Half 2). The button is visible
-                // on the COMPLETED screen and turns enabled as soon as OAuth lands.
-                val stravaConnected = false
+                val isUploading = stravaUploadState is StravaRepository.UploadState.Uploading
+                val uploadSucceeded = stravaUploadState is StravaRepository.UploadState.Success
+                val uploadFailed = stravaUploadState is StravaRepository.UploadState.Failed
+
+                // Button is enabled only when: .fit file is ready, user is connected,
+                // and we aren't already mid-upload or past a successful one.
+                val enabled = isReady && stravaConnected && !isUploading && !uploadSucceeded
+
                 Button(
                     onClick = onUploadToStrava,
-                    enabled = isReady && stravaConnected,
+                    enabled = enabled,
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFC4C02) // Strava orange
+                        containerColor = if (uploadSucceeded) Color(0xFF4CAF50)
+                        else Color(0xFFFC4C02) // Strava orange
                     )
                 ) {
                     when {
@@ -456,6 +470,26 @@ private fun ControlBar(
                             Spacer(Modifier.width(8.dp))
                             Text("Saving workout…")
                         }
+                        exportFailed -> Text("Save failed — cannot upload")
+                        isUploading -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Uploading to Strava…")
+                        }
+                        uploadSucceeded -> {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Uploaded to Strava")
+                        }
+                        uploadFailed -> Text("Upload failed — tap to retry")
                         !stravaConnected -> Text("Upload to Strava — connect in Settings")
                         else -> Text("Upload to Strava")
                     }
