@@ -110,6 +110,9 @@ dependencies {
     // AI / networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // Garmin FIT SDK — .fit file writer for Strava-compatible activity export
+    implementation("com.garmin:fit:21.176.0")
     
     // Charts - Vico for professional data visualization
     implementation("com.patrykandpatrick.vico:compose:2.0.0-alpha.28")

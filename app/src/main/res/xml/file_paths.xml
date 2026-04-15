@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Maps filesDir/workouts/*.fit → content://{app}.fileprovider/workouts/* -->
+    <files-path name="workouts" path="workouts/" />
+</paths>

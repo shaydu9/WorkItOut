@@ -1,5 +1,6 @@
 package com.cycling.workitout.ui.workout
 
+import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
+import com.cycling.workitout.data.export.WorkoutExporter
 import com.cycling.workitout.ui.components.WorkoutInterval
 import com.cycling.workitout.workout.WorkoutEngine
 import com.cycling.workitout.workout.WorkoutRepository
@@ -18,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.io.File
 
 class WorkoutViewModel(
     private val bleManager: BleManager,
@@ -57,6 +61,16 @@ class WorkoutViewModel(
     // When OFF, the workout timer continues but no FTMS writes happen.
     private val _ergEnabled = MutableStateFlow(true)
     val ergEnabled: StateFlow<Boolean> = _ergEnabled.asStateFlow()
+
+    /** UI state for the post-workout .fit export. */
+    sealed class ExportState {
+        object Idle : ExportState()
+        object InProgress : ExportState()
+        data class Ready(val file: File) : ExportState()
+        data class Failed(val message: String) : ExportState()
+    }
+    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
+    val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
     init {
         val workout = workoutDefinition ?: WorkoutRepository.getDemoWorkout()
@@ -110,6 +124,43 @@ class WorkoutViewModel(
     fun pauseWorkout() = workoutEngine.pause()
     fun resumeWorkout() = workoutEngine.resume()
     fun stopWorkout() = workoutEngine.stop()
+
+    /**
+     * Silently write the completed workout to a .fit file in app-private storage.
+     * Idempotent — no-op if the file is already written for this session.
+     * The resulting file is held in [exportState] as [ExportState.Ready] so the
+     * post-workout UI can offer an "Upload to Strava" action against it.
+     */
+    fun exportFitSilently(context: Context) {
+        if (_exportState.value is ExportState.Ready ||
+            _exportState.value is ExportState.InProgress) return
+
+        val workout = workoutEngine.workoutDefinition
+        val startedAt = workoutEngine.workoutStartEpochMillis
+        val records = workoutEngine.recordedData.value
+
+        if (workout == null || startedAt == 0L) {
+            _exportState.value = ExportState.Failed("No workout data to export.")
+            return
+        }
+
+        _exportState.value = ExportState.InProgress
+        viewModelScope.launch {
+            try {
+                val file = WorkoutExporter.exportToFit(
+                    context = context.applicationContext,
+                    workout = workout,
+                    startEpochMillis = startedAt,
+                    records = records
+                )
+                _exportState.value = ExportState.Ready(file)
+                Timber.i("Workout auto-exported to ${file.absolutePath}")
+            } catch (t: Throwable) {
+                Timber.e(t, "Failed to export .fit")
+                _exportState.value = ExportState.Failed(t.message ?: "Export failed")
+            }
+        }
+    }
 
     /**
      * Toggle ERG mode. When turning OFF, release trainer control. When turning back ON,

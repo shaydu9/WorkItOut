@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,6 +31,20 @@ fun WorkoutScreen(
     val metrics by viewModel.liveMetrics.collectAsStateWithLifecycle()
     val recordedData by viewModel.recordedData.collectAsStateWithLifecycle()
     val ergEnabled by viewModel.ergEnabled.collectAsStateWithLifecycle()
+    val exportState by viewModel.exportState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Confirmation dialog state — the Stop button no longer stops immediately;
+    // it asks "End workout?" first.
+    var showEndDialog by remember { mutableStateOf(false) }
+
+    // Auto-export the .fit file as soon as the workout reaches COMPLETED,
+    // whether that's a natural finish or a confirmed user stop. Idempotent.
+    LaunchedEffect(progress.workoutState) {
+        if (progress.workoutState == WorkoutState.COMPLETED) {
+            viewModel.exportFitSilently(context)
+        }
+    }
 
     // Keep screen on during workout
     val view = LocalView.current
@@ -95,8 +110,10 @@ fun WorkoutScreen(
                     onStart = viewModel::startWorkout,
                     onPause = viewModel::pauseWorkout,
                     onResume = viewModel::resumeWorkout,
-                    onStop = viewModel::stopWorkout,
-                    onBack = onNavigateBack
+                    onStopRequested = { showEndDialog = true },
+                    onBack = onNavigateBack,
+                    exportState = exportState,
+                    onUploadToStrava = { /* TODO Phase H Half 2 */ }
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -120,6 +137,31 @@ fun WorkoutScreen(
                     onErgChange = viewModel::setErgEnabled
                 )
             }
+        }
+
+        if (showEndDialog) {
+            AlertDialog(
+                onDismissRequest = { showEndDialog = false },
+                title = { Text("End workout?") },
+                text = {
+                    Text("Stopping now will end the session and save your progress. You can upload the workout to Strava after.")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showEndDialog = false
+                            viewModel.stopWorkout()
+                        }
+                    ) {
+                        Text("End workout", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEndDialog = false }) {
+                        Text("Keep going")
+                    }
+                }
+            )
         }
     }
 }
@@ -310,8 +352,10 @@ private fun ControlBar(
     onStart: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
-    onStop: () -> Unit,
-    onBack: () -> Unit
+    onStopRequested: () -> Unit,
+    onBack: () -> Unit,
+    exportState: WorkoutViewModel.ExportState = WorkoutViewModel.ExportState.Idle,
+    onUploadToStrava: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -351,7 +395,7 @@ private fun ControlBar(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                IconButton(onClick = onStop) {
+                IconButton(onClick = onStopRequested) {
                     Icon(
                         Icons.Default.Stop,
                         contentDescription = "Stop",
@@ -374,7 +418,7 @@ private fun ControlBar(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
                 )
-                IconButton(onClick = onStop) {
+                IconButton(onClick = onStopRequested) {
                     Icon(
                         Icons.Default.Stop,
                         contentDescription = "Stop",
@@ -387,12 +431,35 @@ private fun ControlBar(
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
-                Text(
-                    text = "WORKOUT COMPLETE",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF4CAF50)
-                )
+                val isExporting = exportState is WorkoutViewModel.ExportState.InProgress
+                val isReady = exportState is WorkoutViewModel.ExportState.Ready
+                // Strava isn't wired yet (Phase H Half 2). The button is visible
+                // on the COMPLETED screen and turns enabled as soon as OAuth lands.
+                val stravaConnected = false
+                Button(
+                    onClick = onUploadToStrava,
+                    enabled = isReady && stravaConnected,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFC4C02) // Strava orange
+                    )
+                ) {
+                    when {
+                        isExporting -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Saving workout…")
+                        }
+                        !stravaConnected -> Text("Upload to Strava — connect in Settings")
+                        else -> Text("Upload to Strava")
+                    }
+                }
                 Spacer(modifier = Modifier.size(48.dp))
             }
         }

@@ -28,6 +28,10 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     private var workout: WorkoutDefinition? = null
     private var tickJob: Job? = null
     private var startTimeMillis: Long = 0L
+
+    /** Wall-clock epoch millis when the workout started (0 before start). */
+    val workoutStartEpochMillis: Long get() = startTimeMillis
+    val workoutDefinition: WorkoutDefinition? get() = workout
     private var pausedElapsedSeconds: Int = 0
     private var currentIntervalIndex: Int = 0
     private var intervalStartTotalSeconds: Int = 0
@@ -123,7 +127,8 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             actualPower = power,
             targetPower = _progress.value.targetPowerWatts,
             heartRate = heartRate,
-            cadence = cadence
+            cadence = cadence,
+            epochMillis = System.currentTimeMillis()
         )
 
         val current = _recordedData.value.toMutableList()

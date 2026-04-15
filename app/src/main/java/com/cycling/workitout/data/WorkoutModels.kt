@@ -84,5 +84,7 @@ data class RecordedDataPoint(
     val actualPower: Int,
     val targetPower: Int,
     val heartRate: Int,
-    val cadence: Int
+    val cadence: Int,
+    /** Wall-clock epoch millis when this point was recorded. Used by the .fit exporter. */
+    val epochMillis: Long = 0L
 )
