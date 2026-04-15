@@ -1,16 +1,23 @@
 package com.cycling.workitout.ui.home
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -18,12 +25,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
+import java.util.Locale
 
 private val DURATION_OPTIONS = listOf(30, 45, 60, 75, 90)
 
@@ -107,6 +116,18 @@ fun HomeScreen(
 
             Spacer(Modifier.weight(1f))
 
+            OutlinedButton(
+                onClick = { viewModel.openCustomPrompt() },
+                enabled = !state.isGenerating,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Describe your own workout", fontWeight = FontWeight.Medium)
+            }
+
             Button(
                 onClick = { viewModel.generateWorkout() },
                 enabled = !state.isGenerating,
@@ -128,6 +149,15 @@ fun HomeScreen(
             }
         }
 
+        if (state.customPromptOpen) {
+            CustomPromptDialog(
+                text = state.customPromptText,
+                onTextChange = { viewModel.setCustomPromptText(it) },
+                onDismiss = { viewModel.closeCustomPrompt() },
+                onSubmit = { viewModel.generateCustomWorkout() }
+            )
+        }
+
         if (state.preview != null) {
             WorkoutPreviewSheet(
                 workout = state.preview!!,
@@ -140,6 +170,81 @@ fun HomeScreen(
             )
         }
     }
+}
+
+@Composable
+private fun CustomPromptDialog(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSubmit: () -> Unit
+) {
+    val context = LocalContext.current
+    val voiceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spoken = matches?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                onTextChange(if (text.isBlank()) spoken else "$text $spoken")
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Describe your workout") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Tell me what you want to ride. Examples: \"45 minute sweet spot with 3 long efforts\" or \"hard hilly simulation, 1 hour\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    placeholder = { Text("e.g. 60-minute threshold workout with 4x8min intervals") },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(
+                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                )
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Describe your workout")
+                            }
+                            try {
+                                voiceLauncher.launch(intent)
+                            } catch (_: Exception) {
+                                // No speech recognizer installed — silently ignore
+                            }
+                        }) {
+                            Icon(Icons.Default.Mic, contentDescription = "Voice input")
+                        }
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onSubmit,
+                enabled = text.isNotBlank()
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Generate")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
