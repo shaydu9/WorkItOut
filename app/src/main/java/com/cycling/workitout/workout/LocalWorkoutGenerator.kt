@@ -1,0 +1,126 @@
+package com.cycling.workitout.workout
+
+import com.cycling.workitout.data.PowerZone
+import com.cycling.workitout.data.WorkoutDefinition
+import com.cycling.workitout.data.WorkoutIntervalDef
+import com.cycling.workitout.ui.home.Difficulty
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+/**
+ * Procedural fallback workout generator.
+ * Stand-in until Phase D wires Claude API in AiWorkoutService.
+ * Produces a structured workout that scales with duration, difficulty, and FTP.
+ */
+object LocalWorkoutGenerator {
+
+    fun generate(durationMinutes: Int, difficulty: Difficulty, ftp: Int): WorkoutDefinition {
+        val totalSec = durationMinutes * 60
+        val warmup = (totalSec * 0.15).roundToInt().coerceAtLeast(180)
+        val cooldown = (totalSec * 0.12).roundToInt().coerceAtLeast(180)
+        val mainBlock = totalSec - warmup - cooldown
+
+        val pct = { p: Double -> max(40, (ftp * p).roundToInt()) }
+
+        val intervals = mutableListOf<WorkoutIntervalDef>()
+        intervals += WorkoutIntervalDef(warmup, pct(0.55), "Warmup", PowerZone.Z2_ENDURANCE)
+
+        when (difficulty) {
+            Difficulty.EASY -> {
+                // Long Z2 endurance with two short tempo surges
+                val surge = 120
+                val surgesTotal = surge * 2
+                val z2 = (mainBlock - surgesTotal) / 3
+                intervals += WorkoutIntervalDef(z2, pct(0.65), "Endurance 1", PowerZone.Z2_ENDURANCE)
+                intervals += WorkoutIntervalDef(surge, pct(0.85), "Tempo Surge 1", PowerZone.Z3_TEMPO)
+                intervals += WorkoutIntervalDef(z2, pct(0.65), "Endurance 2", PowerZone.Z2_ENDURANCE)
+                intervals += WorkoutIntervalDef(surge, pct(0.85), "Tempo Surge 2", PowerZone.Z3_TEMPO)
+                intervals += WorkoutIntervalDef(mainBlock - 2 * z2 - surgesTotal, pct(0.65), "Endurance 3", PowerZone.Z2_ENDURANCE)
+            }
+
+            Difficulty.MODERATE -> {
+                // Sweet spot intervals: ~88-92% FTP, 1:3 work:recovery short
+                val recovery = 120
+                val workCount = when {
+                    durationMinutes <= 30 -> 2
+                    durationMinutes <= 45 -> 3
+                    durationMinutes <= 60 -> 4
+                    durationMinutes <= 75 -> 5
+                    else -> 6
+                }
+                val totalRecovery = recovery * (workCount - 1)
+                val workSec = (mainBlock - totalRecovery) / workCount
+                repeat(workCount) { i ->
+                    intervals += WorkoutIntervalDef(workSec, pct(0.90), "Sweet Spot ${i + 1}", PowerZone.Z4_THRESHOLD)
+                    if (i < workCount - 1) {
+                        intervals += WorkoutIntervalDef(recovery, pct(0.50), "Recovery", PowerZone.Z1_RECOVERY)
+                    }
+                }
+            }
+
+            Difficulty.HARD -> {
+                // Threshold intervals at 100-105% FTP
+                val recovery = 180
+                val workCount = when {
+                    durationMinutes <= 30 -> 2
+                    durationMinutes <= 45 -> 3
+                    durationMinutes <= 60 -> 3
+                    durationMinutes <= 75 -> 4
+                    else -> 5
+                }
+                val totalRecovery = recovery * (workCount - 1)
+                val workSec = (mainBlock - totalRecovery) / workCount
+                repeat(workCount) { i ->
+                    intervals += WorkoutIntervalDef(workSec, pct(1.02), "Threshold ${i + 1}", PowerZone.Z4_THRESHOLD)
+                    if (i < workCount - 1) {
+                        intervals += WorkoutIntervalDef(recovery, pct(0.50), "Recovery", PowerZone.Z1_RECOVERY)
+                    }
+                }
+            }
+
+            Difficulty.VO2 -> {
+                // 3-minute VO2 efforts at 115-120% FTP, 1:1 recovery
+                val work = 180
+                val recovery = 180
+                val pairs = (mainBlock / (work + recovery)).coerceAtLeast(1)
+                repeat(pairs) { i ->
+                    intervals += WorkoutIntervalDef(work, pct(1.18), "VO2 #${i + 1}", PowerZone.Z5_VO2MAX)
+                    if (i < pairs - 1) {
+                        intervals += WorkoutIntervalDef(recovery, pct(0.50), "Recovery", PowerZone.Z1_RECOVERY)
+                    }
+                }
+                // Pad any remaining seconds with recovery
+                val used = pairs * work + (pairs - 1) * recovery
+                val leftover = mainBlock - used
+                if (leftover > 30) {
+                    intervals += WorkoutIntervalDef(leftover, pct(0.55), "Spin", PowerZone.Z1_RECOVERY)
+                }
+            }
+        }
+
+        intervals += WorkoutIntervalDef(cooldown, pct(0.50), "Cooldown", PowerZone.Z1_RECOVERY)
+
+        // Drop any zero/negative intervals from integer rounding
+        val cleaned = intervals.filter { it.durationSeconds > 0 }
+
+        val name = when (difficulty) {
+            Difficulty.EASY -> "${durationMinutes}-Min Endurance"
+            Difficulty.MODERATE -> "${durationMinutes}-Min Sweet Spot"
+            Difficulty.HARD -> "${durationMinutes}-Min Threshold"
+            Difficulty.VO2 -> "${durationMinutes}-Min VO2 Max"
+        }
+        val description = when (difficulty) {
+            Difficulty.EASY -> "Aerobic base ride with brief tempo surges"
+            Difficulty.MODERATE -> "Sweet spot intervals at ~90% FTP with short recoveries"
+            Difficulty.HARD -> "Threshold repeats at ~102% FTP"
+            Difficulty.VO2 -> "Hard 3-minute VO2 max efforts with equal recovery"
+        }
+
+        return WorkoutDefinition(
+            id = "local_${difficulty.name.lowercase()}_$durationMinutes",
+            name = name,
+            description = description,
+            intervals = cleaned
+        )
+    }
+}

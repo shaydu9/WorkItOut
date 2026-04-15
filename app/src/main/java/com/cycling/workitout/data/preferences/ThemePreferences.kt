@@ -3,6 +3,7 @@ package com.cycling.workitout.data.preferences
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -24,28 +25,53 @@ class ThemePreferences(private val context: Context) {
     companion object {
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         private val POWER_SMOOTHING_SECONDS_KEY = intPreferencesKey("power_smoothing_seconds")
+        private val HAS_COMPLETED_FIRST_RUN_KEY = booleanPreferencesKey("has_completed_first_run")
+        private val USER_FTP_WATTS_KEY = intPreferencesKey("user_ftp_watts")
+        const val DEFAULT_FTP_WATTS = 200
     }
-    
+
     val themeMode: Flow<ThemeMode> = context.dataStore.data
         .map { preferences ->
             val themeName = preferences[THEME_MODE_KEY] ?: ThemeMode.SYSTEM.name
             ThemeMode.valueOf(themeName)
         }
-    
+
     val powerSmoothingSeconds: Flow<Int> = context.dataStore.data
         .map { preferences ->
             preferences[POWER_SMOOTHING_SECONDS_KEY] ?: 3 // Default to 3 seconds
         }
-    
+
+    val hasCompletedFirstRun: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[HAS_COMPLETED_FIRST_RUN_KEY] ?: false
+        }
+
+    val userFtpWatts: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[USER_FTP_WATTS_KEY] ?: DEFAULT_FTP_WATTS
+        }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
         }
     }
-    
+
     suspend fun setPowerSmoothingSeconds(seconds: Int) {
         context.dataStore.edit { preferences ->
             preferences[POWER_SMOOTHING_SECONDS_KEY] = seconds
+        }
+    }
+
+    suspend fun setHasCompletedFirstRun(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[HAS_COMPLETED_FIRST_RUN_KEY] = completed
+        }
+    }
+
+    suspend fun setUserFtpWatts(watts: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[USER_FTP_WATTS_KEY] = watts.coerceIn(50, 600)
         }
     }
 }

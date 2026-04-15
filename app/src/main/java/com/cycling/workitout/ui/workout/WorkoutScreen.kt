@@ -16,7 +16,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutState
 import com.cycling.workitout.ui.components.PowerDataPoint
 import com.cycling.workitout.ui.components.WorkoutInterval
@@ -30,6 +29,7 @@ fun WorkoutScreen(
     val progress by viewModel.workoutProgress.collectAsStateWithLifecycle()
     val metrics by viewModel.liveMetrics.collectAsStateWithLifecycle()
     val recordedData by viewModel.recordedData.collectAsStateWithLifecycle()
+    val ergEnabled by viewModel.ergEnabled.collectAsStateWithLifecycle()
 
     // Keep screen on during workout
     val view = LocalView.current
@@ -53,83 +53,12 @@ fun WorkoutScreen(
                 .padding(padding)
         ) {
             // ═══════════════════════════════════════
-            // TOP SECTION (~60%) — Metrics Panel
-            // ═══════════════════════════════════════
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.6f)
-                    .background(
-                        zoneColor.copy(alpha = 0.05f)
-                    )
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Control bar
-                ControlBar(
-                    workoutState = progress.workoutState,
-                    intervalName = progress.currentIntervalName,
-                    onStart = viewModel::startWorkout,
-                    onPause = viewModel::pauseWorkout,
-                    onResume = viewModel::resumeWorkout,
-                    onStop = viewModel::stopWorkout,
-                    onBack = onNavigateBack
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                when (progress.workoutState) {
-                    WorkoutState.NOT_STARTED -> {
-                        NotStartedContent(
-                            workoutName = progress.workoutName,
-                            totalDuration = progress.totalDurationSeconds,
-                            intervals = viewModel.workoutIntervals,
-                            onStart = viewModel::startWorkout
-                        )
-                    }
-
-                    WorkoutState.COMPLETED -> {
-                        CompletedContent(
-                            recordedData = recordedData.map {
-                                PowerDataPoint(it.timeSeconds, it.actualPower)
-                            },
-                            totalDuration = progress.totalDurationSeconds,
-                            onBack = onNavigateBack
-                        )
-                    }
-
-                    else -> {
-                        // RUNNING or PAUSED — show live metrics
-                        LiveMetricsContent(
-                            currentPower = metrics.power,
-                            targetPower = progress.targetPowerWatts,
-                            heartRate = metrics.heartRate,
-                            cadence = metrics.cadence,
-                            zone = progress.currentZone,
-                            zoneColor = zoneColor,
-                            intervalRemaining = progress.intervalRemainingSeconds,
-                            intervalDuration = progress.intervalDurationSeconds,
-                            totalElapsed = progress.totalElapsedSeconds,
-                            totalDuration = progress.totalDurationSeconds,
-                            isPaused = progress.workoutState == WorkoutState.PAUSED
-                        )
-                    }
-                }
-            }
-
-            // Divider between sections
-            HorizontalDivider(
-                color = zoneColor.copy(alpha = 0.3f),
-                thickness = 2.dp
-            )
-
-            // ═══════════════════════════════════════
-            // BOTTOM SECTION (~40%) — Workout Graph
+            // TOP HALF (50%) — Workout Progress Graph
             // ═══════════════════════════════════════
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.4f)
+                    .weight(0.5f)
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(12.dp)
             ) {
@@ -140,13 +69,239 @@ fun WorkoutScreen(
                     recordedPowerPoints = recordedData.map {
                         PowerDataPoint(it.timeSeconds, it.actualPower)
                     },
+                    workoutState = progress.workoutState,
+                    workoutName = progress.workoutName
+                )
+            }
+
+            HorizontalDivider(
+                color = zoneColor.copy(alpha = 0.3f),
+                thickness = 2.dp
+            )
+
+            // ═══════════════════════════════════════
+            // BOTTOM HALF (50%) — Stats grid + controls
+            // ═══════════════════════════════════════
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.5f)
+                    .background(zoneColor.copy(alpha = 0.05f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                ControlBar(
+                    workoutState = progress.workoutState,
+                    intervalName = progress.currentIntervalName,
+                    onStart = viewModel::startWorkout,
+                    onPause = viewModel::pauseWorkout,
+                    onResume = viewModel::resumeWorkout,
+                    onStop = viewModel::stopWorkout,
+                    onBack = onNavigateBack
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                StatsGrid(
+                    threeSecPower = metrics.power,
                     targetPower = progress.targetPowerWatts,
-                    workoutState = progress.workoutState
+                    intervalRemaining = progress.intervalRemainingSeconds,
+                    cadence = metrics.cadence,
+                    heartRate = metrics.heartRate,
+                    zoneColor = zoneColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                ErgToggleRow(
+                    ergEnabled = ergEnabled,
+                    onErgChange = viewModel::setErgEnabled
                 )
             }
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Stats grid (2×3) — the user-specified bottom-half stats
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun StatsGrid(
+    threeSecPower: Int,
+    targetPower: Int,
+    intervalRemaining: Int,
+    cadence: Int,
+    heartRate: Int,
+    zoneColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val powerColor = when {
+        targetPower == 0 -> MaterialTheme.colorScheme.primary
+        kotlin.math.abs(threeSecPower - targetPower) <= targetPower * 0.10 -> Color(0xFF4CAF50)
+        threeSecPower > targetPower -> Color(0xFFFF5252)
+        else -> Color(0xFF2196F3)
+    }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Row 1: 3s avg power (hero) | Target power
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatCell(
+                label = "3s POWER",
+                value = "$threeSecPower",
+                unit = "W",
+                color = powerColor,
+                emphasized = true,
+                modifier = Modifier.weight(1f)
+            )
+            StatCell(
+                label = "TARGET",
+                value = "$targetPower",
+                unit = "W",
+                color = zoneColor,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // Row 2: Interval remaining (full width)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(0.8f)
+        ) {
+            StatCell(
+                label = "INTERVAL REMAINING",
+                value = formatTime(intervalRemaining),
+                unit = "",
+                color = if (intervalRemaining <= 10) Color(0xFFFF9800)
+                else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Row 3: Cadence | HR
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatCell(
+                label = "CADENCE",
+                value = "$cadence",
+                unit = "rpm",
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.weight(1f)
+            )
+            StatCell(
+                label = "HEART RATE",
+                value = "$heartRate",
+                unit = "bpm",
+                color = Color(0xFFFF5252),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatCell(
+    label: String,
+    value: String,
+    unit: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    emphasized: Boolean = false
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = value,
+                    fontSize = if (emphasized) 56.sp else 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
+                    textAlign = TextAlign.Center
+                )
+                if (unit.isNotEmpty()) {
+                    Text(
+                        text = " $unit",
+                        fontSize = if (emphasized) 16.sp else 14.sp,
+                        color = color.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = if (emphasized) 8.dp else 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErgToggleRow(
+    ergEnabled: Boolean,
+    onErgChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text(
+                text = "ERG MODE",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (ergEnabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = if (ergEnabled) "Trainer locks to target power"
+                else "Free ride · timer continues",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = ergEnabled,
+            onCheckedChange = onErgChange
+        )
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Control bar
+// ═══════════════════════════════════════════════════════════════
 
 @Composable
 private fun ControlBar(
@@ -169,16 +324,26 @@ private fun ControlBar(
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
                 Text(
-                    text = "WORKOUT",
+                    text = "READY",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.size(48.dp))
+                IconButton(onClick = onStart) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             WorkoutState.RUNNING -> {
                 IconButton(onClick = onPause) {
-                    Icon(Icons.Default.Pause, contentDescription = "Pause", tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        Icons.Default.Pause,
+                        contentDescription = "Pause",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Text(
                     text = intervalName.uppercase(),
@@ -187,13 +352,21 @@ private fun ControlBar(
                     color = MaterialTheme.colorScheme.primary
                 )
                 IconButton(onClick = onStop) {
-                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Default.Stop,
+                        contentDescription = "Stop",
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
 
             WorkoutState.PAUSED -> {
                 IconButton(onClick = onResume) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Resume", tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Resume",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Text(
                     text = "PAUSED",
@@ -202,7 +375,11 @@ private fun ControlBar(
                     color = MaterialTheme.colorScheme.error
                 )
                 IconButton(onClick = onStop) {
-                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Default.Stop,
+                        contentDescription = "Stop",
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
 
@@ -222,313 +399,8 @@ private fun ControlBar(
     }
 }
 
-@Composable
-private fun LiveMetricsContent(
-    currentPower: Int,
-    targetPower: Int,
-    heartRate: Int,
-    cadence: Int,
-    zone: PowerZone,
-    zoneColor: Color,
-    intervalRemaining: Int,
-    intervalDuration: Int,
-    totalElapsed: Int,
-    totalDuration: Int,
-    isPaused: Boolean
-) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceEvenly
-    ) {
-        // Current power — the hero number
-        val powerDiff = if (targetPower > 0) currentPower - targetPower else 0
-        val powerColor = when {
-            targetPower == 0 -> MaterialTheme.colorScheme.primary
-            kotlin.math.abs(powerDiff) <= targetPower * 0.10 -> Color(0xFF4CAF50) // Green - on target
-            powerDiff > 0 -> Color(0xFFFF5252) // Red - too high
-            else -> Color(0xFF2196F3) // Blue - too low
-        }
-
-        Text(
-            text = "$currentPower",
-            fontSize = 72.sp,
-            fontWeight = FontWeight.Bold,
-            color = powerColor,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = "W",
-            fontSize = 20.sp,
-            color = powerColor.copy(alpha = 0.7f),
-            modifier = Modifier.offset(y = (-8).dp)
-        )
-
-        // Target power + zone
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Target: ${targetPower}W",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = zoneColor
-            )
-            Text(
-                text = "  ·  ",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = zone.label,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = zoneColor
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // HR and Cadence row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            MetricBox(
-                value = "$heartRate",
-                unit = "bpm",
-                label = "Heart Rate",
-                color = Color(0xFFFF5252)
-            )
-
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .height(48.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant)
-            )
-
-            MetricBox(
-                value = "$cadence",
-                unit = "rpm",
-                label = "Cadence",
-                color = MaterialTheme.colorScheme.tertiary
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Interval progress bar
-        val intervalProgress = if (intervalDuration > 0) {
-            1f - (intervalRemaining.toFloat() / intervalDuration.toFloat())
-        } else 0f
-
-        LinearProgressIndicator(
-            progress = { intervalProgress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp),
-            color = zoneColor,
-            trackColor = zoneColor.copy(alpha = 0.15f),
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Dual timers
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(horizontalAlignment = Alignment.Start) {
-                Text(
-                    text = "Interval",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = formatTime(intervalRemaining),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (intervalRemaining <= 10) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            if (isPaused) {
-                Text(
-                    text = "PAUSED",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.CenterVertically)
-                )
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "Total",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${formatTime(totalElapsed)} / ${formatTime(totalDuration)}",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MetricBox(
-    value: String,
-    unit: String,
-    label: String,
-    color: Color
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            verticalAlignment = Alignment.Bottom
-        ) {
-            Text(
-                text = value,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = " $unit",
-                fontSize = 14.sp,
-                color = color.copy(alpha = 0.7f),
-                modifier = Modifier.offset(y = (-4).dp)
-            )
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun NotStartedContent(
-    workoutName: String,
-    totalDuration: Int,
-    intervals: List<WorkoutInterval>,
-    onStart: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = workoutName,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "${intervals.size} intervals · ${formatTime(totalDuration)}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = onStart,
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "START WORKOUT",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun CompletedContent(
-    recordedData: List<PowerDataPoint>,
-    totalDuration: Int,
-    onBack: () -> Unit
-) {
-    val avgPower = if (recordedData.isNotEmpty()) {
-        recordedData.map { it.power }.average().toInt()
-    } else 0
-
-    val maxPower = recordedData.maxOfOrNull { it.power } ?: 0
-
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            Icons.Default.EmojiEvents,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = Color(0xFFFFC107)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Workout Complete!",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF4CAF50)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            SummaryItem("Duration", formatTime(totalDuration))
-            SummaryItem("Avg Power", "${avgPower}W")
-            SummaryItem("Max Power", "${maxPower}W")
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        OutlinedButton(onClick = onBack) {
-            Text("Done")
-        }
-    }
-}
-
-@Composable
-private fun SummaryItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════
-// BOTTOM SECTION — Workout Progress Graph
+// Workout Progress Graph (top half)
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
@@ -537,34 +409,31 @@ fun WorkoutProgressGraph(
     currentTimeSeconds: Int,
     totalDurationSeconds: Int,
     recordedPowerPoints: List<PowerDataPoint>,
-    targetPower: Int,
-    workoutState: WorkoutState
+    workoutState: WorkoutState,
+    workoutName: String = ""
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "WORKOUT PROGRESS",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = workoutName.ifBlank { "WORKOUT" },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            if (workoutState == WorkoutState.RUNNING || workoutState == WorkoutState.PAUSED) {
-                Text(
-                    text = "${formatTime(currentTimeSeconds)} / ${formatTime(totalDurationSeconds)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+            Text(
+                text = "${formatTime(currentTimeSeconds)} / ${formatTime(totalDurationSeconds)}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Workout structure as colored blocks with position indicator
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -579,7 +448,6 @@ fun WorkoutProgressGraph(
             )
         }
 
-        // Legend
         Spacer(modifier = Modifier.height(4.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -614,7 +482,6 @@ private fun WorkoutBlocksGraph(
         val canvasHeight = size.height
         val totalDuration = totalDurationSeconds.toFloat()
 
-        // Draw interval blocks
         var cumulativeSeconds = 0f
         for (interval in intervals) {
             val blockStart = (cumulativeSeconds / totalDuration) * canvasWidth
@@ -626,28 +493,23 @@ private fun WorkoutBlocksGraph(
                 topLeft = androidx.compose.ui.geometry.Offset(blockStart, canvasHeight - blockHeight),
                 size = androidx.compose.ui.geometry.Size(blockWidth, blockHeight)
             )
-
-            // Block border
             drawRect(
                 color = interval.color.copy(alpha = 0.7f),
                 topLeft = androidx.compose.ui.geometry.Offset(blockStart, canvasHeight - blockHeight),
                 size = androidx.compose.ui.geometry.Size(blockWidth, blockHeight),
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
             )
-
             cumulativeSeconds += interval.durationSeconds.toFloat()
         }
 
-        // Draw actual power trace
+        // Actual power trace
         if (recordedPowerPoints.size >= 2) {
             val path = androidx.compose.ui.graphics.Path()
             var started = false
-
             for (point in recordedPowerPoints) {
                 val x = (point.timeSeconds.toFloat() / totalDuration) * canvasWidth
                 val normalizedPower = (point.power.toFloat() / maxPower).coerceIn(0f, 1f)
                 val y = canvasHeight - (normalizedPower * canvasHeight * 0.85f)
-
                 if (!started) {
                     path.moveTo(x, y)
                     started = true
@@ -655,7 +517,6 @@ private fun WorkoutBlocksGraph(
                     path.lineTo(x, y)
                 }
             }
-
             drawPath(
                 path = path,
                 color = Color(0xFF00BCD4),
@@ -663,28 +524,14 @@ private fun WorkoutBlocksGraph(
             )
         }
 
-        // Draw current position indicator line
+        // Now-cursor
         if (workoutState == WorkoutState.RUNNING || workoutState == WorkoutState.PAUSED) {
             val posX = (currentTimeSeconds.toFloat() / totalDuration) * canvasWidth
-
-            // Vertical line
             drawLine(
                 color = Color.White,
                 start = androidx.compose.ui.geometry.Offset(posX, 0f),
                 end = androidx.compose.ui.geometry.Offset(posX, canvasHeight),
                 strokeWidth = 2.dp.toPx()
-            )
-
-            // Small triangle at top
-            val trianglePath = androidx.compose.ui.graphics.Path().apply {
-                moveTo(posX, 0f)
-                lineTo(posX - 5.dp.toPx(), -2.dp.toPx())
-                lineTo(posX + 5.dp.toPx(), -2.dp.toPx())
-                close()
-            }
-            drawPath(
-                path = trianglePath,
-                color = Color.White
             )
         }
     }

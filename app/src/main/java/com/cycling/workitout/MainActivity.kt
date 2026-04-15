@@ -11,11 +11,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.cycling.workitout.ble.BleManager
+import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.preferences.ThemeMode
 import com.cycling.workitout.ui.navigation.WorkItOutNavigation
 import com.cycling.workitout.ui.theme.WorkItOutTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 class MainActivity : ComponentActivity() {
     
@@ -42,6 +44,20 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val powerSmoothingSeconds = WorkItOutApplication.themePreferences.powerSmoothingSeconds.first()
             bleManager.setPowerSmoothingWindow(powerSmoothingSeconds)
+        }
+
+        // Auto-reconnect previously paired devices
+        lifecycleScope.launch {
+            val saved = WorkItOutApplication.deviceRepository.getAllDevices().first()
+            saved.forEach { device ->
+                Timber.d("Auto-reconnecting ${device.deviceType} ${device.macAddress}")
+                when (device.deviceType) {
+                    DeviceType.HEART_RATE_MONITOR -> bleManager.reconnectHeartRateMonitor(device.macAddress)
+                    DeviceType.SMART_TRAINER -> bleManager.reconnectTrainer(device.macAddress)
+                    DeviceType.POWER_METER -> bleManager.reconnectPowerMeter(device.macAddress)
+                    else -> Timber.d("No reconnect path for ${device.deviceType}")
+                }
+            }
         }
         
         setContent {
