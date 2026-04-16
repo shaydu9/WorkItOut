@@ -10,6 +10,7 @@ import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
+import com.cycling.workitout.data.database.CompletedRideEntity
 import com.cycling.workitout.data.export.WorkoutExporter
 import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.WorkoutInterval
@@ -20,10 +21,16 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.io.File
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 class WorkoutViewModel(
     private val bleManager: BleManager,
@@ -78,6 +85,9 @@ class WorkoutViewModel(
     }
     private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
+
+    /** Tracks whether we've already persisted this ride so we don't double-save. */
+    private var rideSaved = false
 
     init {
         // Fresh workout session — clear any stale upload result from the last run.
@@ -183,6 +193,62 @@ class WorkoutViewModel(
     }
 
     /**
+     * Persist the completed ride to Room. Called once when the workout reaches COMPLETED.
+     * Computes summary stats (avg/max power, NP, avg/max HR, avg cadence) from the
+     * recorded data points and serializes the data points as compact JSON for the
+     * detail-screen graph.
+     */
+    fun saveRideToHistory() {
+        if (rideSaved) return
+        val workout = workoutEngine.workoutDefinition ?: return
+        val startedAt = workoutEngine.workoutStartEpochMillis
+        val records = workoutEngine.recordedData.value
+        if (startedAt == 0L || records.isEmpty()) return
+        rideSaved = true
+
+        viewModelScope.launch {
+            try {
+                val ftp = WorkItOutApplication.themePreferences.userFtpWatts.first()
+                val powers = records.map { it.actualPower }
+                val avgPower = powers.average().toInt()
+                val maxPower = powers.max()
+                val avgHr = records.map { it.heartRate }.average().toInt()
+                val maxHr = records.maxOf { it.heartRate }
+                val avgCadence = records.map { it.cadence }.average().toInt()
+
+                // Normalised Power: rolling 30-second average of the 4th power, then 4th root.
+                val np = computeNormalizedPower(powers)
+
+                val durationSec = records.lastOrNull()?.timeSeconds ?: 0
+
+                // Compact JSON: small keys to keep the blob lean.
+                val compactPoints = records.map {
+                    CompactDataPoint(it.timeSeconds, it.actualPower, it.targetPower, it.heartRate, it.cadence)
+                }
+                val json = Json.encodeToString(compactPoints)
+
+                val entity = CompletedRideEntity(
+                    name = workout.name,
+                    startedAtMillis = startedAt,
+                    durationSeconds = durationSec,
+                    avgPowerWatts = avgPower,
+                    maxPowerWatts = maxPower,
+                    avgHeartRate = avgHr,
+                    maxHeartRate = maxHr,
+                    avgCadence = avgCadence,
+                    normalizedPowerWatts = np,
+                    ftpWatts = ftp,
+                    dataPointsJson = json
+                )
+                WorkItOutApplication.database.completedRideDao().insert(entity)
+                Timber.i("Ride saved to history: ${workout.name}")
+            } catch (t: Throwable) {
+                Timber.e(t, "Failed to save ride to history")
+            }
+        }
+    }
+
+    /**
      * Toggle ERG mode. When turning OFF, release trainer control. When turning back ON,
      * re-acquire control and immediately push the current target so the trainer catches up.
      */
@@ -201,4 +267,25 @@ class WorkoutViewModel(
             }
         }
     }
+}
+
+/** Compact serializable data point for the JSON blob stored in completed_rides. */
+@Serializable
+data class CompactDataPoint(
+    val t: Int,   // timeSeconds
+    val p: Int,   // actualPower
+    val tp: Int,  // targetPower
+    val hr: Int,  // heartRate
+    val c: Int    // cadence
+)
+
+/**
+ * Normalised Power: 30-second rolling average → raise to 4th power → mean → 4th root.
+ * Falls back to average power when fewer than 30 samples.
+ */
+private fun computeNormalizedPower(powers: List<Int>): Int {
+    if (powers.size < 30) return powers.average().toInt()
+    val rolling = powers.windowed(30) { window -> window.average() }
+    val fourthPowerMean = rolling.map { it.pow(4.0) }.average()
+    return fourthPowerMean.pow(0.25).toInt()
 }

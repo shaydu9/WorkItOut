@@ -2,9 +2,13 @@ package com.cycling.workitout.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
+import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
+import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.data.ai.AiWorkoutService
+import com.cycling.workitout.data.database.SavedWorkoutEntity
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.workout.LocalWorkoutGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import timber.log.Timber
 
 enum class Difficulty(val label: String) {
@@ -141,4 +148,58 @@ class HomeViewModel(
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
+
+    // ── Workout Library ────────────────────────────────────────────────
+
+    private val dao = WorkItOutApplication.database.savedWorkoutDao()
+
+    /** Save the currently-previewed workout to the library. */
+    fun saveWorkoutToLibrary() {
+        val workout = _uiState.value.preview ?: return
+        viewModelScope.launch {
+            if (dao.existsByWorkoutId(workout.id)) {
+                Timber.d("Workout ${workout.id} already saved")
+                return@launch
+            }
+            val entity = SavedWorkoutEntity(
+                workoutId = workout.id,
+                name = workout.name,
+                description = workout.description,
+                totalDurationSeconds = workout.totalDurationSeconds,
+                savedAtMillis = System.currentTimeMillis(),
+                intervalsJson = Json.encodeToString(workout.intervals.map {
+                    CompactInterval(it.durationSeconds, it.targetPowerWatts, it.name, it.zone.name)
+                })
+            )
+            dao.insert(entity)
+            Timber.i("Saved workout to library: ${workout.name}")
+        }
+    }
+}
+
+/** Compact serializable interval for the JSON blob in saved_workouts. */
+@Serializable
+data class CompactInterval(
+    val d: Int,   // durationSeconds
+    val p: Int,   // targetPowerWatts
+    val n: String, // name
+    val z: String  // PowerZone enum name
+)
+
+/** Reconstruct a [WorkoutDefinition] from a [SavedWorkoutEntity]. */
+fun SavedWorkoutEntity.toWorkoutDefinition(): WorkoutDefinition {
+    val intervals = Json.decodeFromString<List<CompactInterval>>(intervalsJson).map {
+        WorkoutIntervalDef(
+            durationSeconds = it.d,
+            targetPowerWatts = it.p,
+            name = it.n,
+            zone = PowerZone.valueOf(it.z)
+        )
+    }
+    return WorkoutDefinition(
+        id = workoutId,
+        name = name,
+        description = description,
+        intervals = intervals
+    )
 }

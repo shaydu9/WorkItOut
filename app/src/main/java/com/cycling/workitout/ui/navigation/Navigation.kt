@@ -6,16 +6,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.ui.firstrun.FirstRunPairingScreen
 import com.cycling.workitout.ui.firstrun.FirstRunPairingViewModel
+import com.cycling.workitout.ui.history.HistoryScreen
+import com.cycling.workitout.ui.history.HistoryViewModel
+import com.cycling.workitout.ui.history.RideDetailScreen
+import com.cycling.workitout.ui.history.RideDetailViewModel
 import com.cycling.workitout.ui.home.HomeScreen
 import com.cycling.workitout.ui.home.HomeViewModel
+import com.cycling.workitout.ui.library.LibraryScreen
+import com.cycling.workitout.ui.library.LibraryViewModel
 import com.cycling.workitout.ui.settings.SettingsScreen
 import com.cycling.workitout.ui.workout.WorkoutScreen
 import com.cycling.workitout.ui.workout.WorkoutViewModel
@@ -26,6 +34,11 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object ActiveWorkout : Screen("active_workout")
     object Settings : Screen("settings")
+    object History : Screen("history")
+    object Library : Screen("library")
+    object RideDetail : Screen("ride_detail/{rideId}") {
+        fun withId(id: Long) = "ride_detail/$id"
+    }
 }
 
 /**
@@ -89,6 +102,12 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 },
                 onRepairDevices = {
                     navController.navigate(Screen.FirstRunPairing.route)
+                },
+                onOpenHistory = {
+                    navController.navigate(Screen.History.route)
+                },
+                onOpenLibrary = {
+                    navController.navigate(Screen.Library.route)
                 }
             )
         }
@@ -119,6 +138,41 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(Screen.Library.route) {
+            val viewModel = remember { LibraryViewModel() }
+            LibraryScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onStartWorkout = { workout ->
+                    WorkoutSession.pendingWorkout = workout
+                    navController.navigate(Screen.ActiveWorkout.route)
+                }
+            )
+        }
+
+        composable(Screen.History.route) {
+            val viewModel = remember { HistoryViewModel() }
+            HistoryScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onRideClick = { rideId ->
+                    navController.navigate(Screen.RideDetail.withId(rideId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.RideDetail.route,
+            arguments = listOf(navArgument("rideId") { type = NavType.LongType })
+        ) { backStack ->
+            val rideId = backStack.arguments?.getLong("rideId") ?: return@composable
+            val viewModel = remember(rideId) { RideDetailViewModel(rideId) }
+            RideDetailScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }

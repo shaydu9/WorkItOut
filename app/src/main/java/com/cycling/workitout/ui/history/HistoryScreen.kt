@@ -1,0 +1,155 @@
+package com.cycling.workitout.ui.history
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cycling.workitout.data.database.CompletedRideEntity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HistoryScreen(
+    viewModel: HistoryViewModel,
+    onNavigateBack: () -> Unit,
+    onRideClick: (Long) -> Unit
+) {
+    val rides by viewModel.rides.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Ride History") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        if (rides.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "No rides yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Completed workouts will appear here",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                items(rides, key = { it.id }) { ride ->
+                    RideCard(ride = ride, onClick = { onRideClick(ride.id) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RideCard(ride: CompletedRideEntity, onClick: () -> Unit) {
+    val dateFormat = SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault())
+    val dateStr = dateFormat.format(Date(ride.startedAtMillis))
+    val durationMin = ride.durationSeconds / 60
+    val intensityFactor = if (ride.ftpWatts > 0) {
+        ride.normalizedPowerWatts.toFloat() / ride.ftpWatts
+    } else 0f
+    val tss = (intensityFactor * intensityFactor * durationMin / 60f * 100f).toInt()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    ride.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${durationMin}min",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Text(
+                dateStr,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatChip("Avg", "${ride.avgPowerWatts}W")
+                StatChip("NP", "${ride.normalizedPowerWatts}W")
+                StatChip("TSS", "$tss")
+                if (ride.avgHeartRate > 0) {
+                    StatChip("HR", "${ride.avgHeartRate}bpm")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatChip(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}

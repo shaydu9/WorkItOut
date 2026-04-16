@@ -15,13 +15,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * auto-reconnect on startup.
  */
 @Database(
-    entities = [SavedDeviceEntity::class],
-    version = 4,
+    entities = [SavedDeviceEntity::class, CompletedRideEntity::class, SavedWorkoutEntity::class],
+    version = 6,
     exportSchema = false
 )
 abstract class WorkItOutDatabase : RoomDatabase() {
 
     abstract fun savedDeviceDao(): SavedDeviceDao
+    abstract fun completedRideDao(): CompletedRideDao
+    abstract fun savedWorkoutDao(): SavedWorkoutDao
 
     companion object {
         @Volatile
@@ -86,6 +88,45 @@ abstract class WorkItOutDatabase : RoomDatabase() {
             }
         }
 
+        /** v4 → v5: add completed_rides table for workout history. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS completed_rides (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        startedAtMillis INTEGER NOT NULL,
+                        durationSeconds INTEGER NOT NULL,
+                        avgPowerWatts INTEGER NOT NULL,
+                        maxPowerWatts INTEGER NOT NULL,
+                        avgHeartRate INTEGER NOT NULL,
+                        maxHeartRate INTEGER NOT NULL,
+                        avgCadence INTEGER NOT NULL,
+                        normalizedPowerWatts INTEGER NOT NULL,
+                        ftpWatts INTEGER NOT NULL,
+                        dataPointsJson TEXT NOT NULL
+                    )
+                """)
+            }
+        }
+
+        /** v5 → v6: add saved_workouts table for the workout library. */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS saved_workouts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        workoutId TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        totalDurationSeconds INTEGER NOT NULL,
+                        savedAtMillis INTEGER NOT NULL,
+                        intervalsJson TEXT NOT NULL
+                    )
+                """)
+            }
+        }
+
         fun getDatabase(context: Context): WorkItOutDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -93,7 +134,7 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                     WorkItOutDatabase::class.java,
                     "workitout_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 INSTANCE = instance
                 instance

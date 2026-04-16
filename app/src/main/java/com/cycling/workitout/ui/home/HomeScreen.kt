@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -42,7 +44,9 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onStartWorkout: (WorkoutDefinition) -> Unit,
     onOpenSettings: () -> Unit,
-    onRepairDevices: () -> Unit
+    onRepairDevices: () -> Unit,
+    onOpenHistory: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
@@ -64,6 +68,12 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Today's Workout") },
                 actions = {
+                    IconButton(onClick = onOpenLibrary) {
+                        Icon(Icons.Default.CollectionsBookmark, contentDescription = "Workout library")
+                    }
+                    IconButton(onClick = onOpenHistory) {
+                        Icon(Icons.Default.History, contentDescription = "Ride history")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -166,7 +176,8 @@ fun HomeScreen(
                     viewModel.dismissPreview()
                     onStartWorkout(w)
                 },
-                onDismiss = { viewModel.dismissPreview() }
+                onDismiss = { viewModel.dismissPreview() },
+                onSave = { viewModel.saveWorkoutToLibrary() }
             )
         }
     }
@@ -252,8 +263,11 @@ private fun CustomPromptDialog(
 private fun WorkoutPreviewSheet(
     workout: WorkoutDefinition,
     onStart: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSave: (() -> Unit)? = null
 ) {
+    var saved by remember { mutableStateOf(false) }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -262,7 +276,32 @@ private fun WorkoutPreviewSheet(
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(workout.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    workout.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                if (onSave != null) {
+                    IconButton(onClick = {
+                        onSave()
+                        saved = true
+                    }) {
+                        Icon(
+                            if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = if (saved) "Saved" else "Save to library",
+                            tint = if (saved) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             val totalMin = workout.totalDurationSeconds / 60
             Text(
                 "${totalMin} min · ${workout.intervals.size} intervals",

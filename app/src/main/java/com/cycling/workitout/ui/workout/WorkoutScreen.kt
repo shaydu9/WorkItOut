@@ -41,11 +41,13 @@ fun WorkoutScreen(
     // it asks "End workout?" first.
     var showEndDialog by remember { mutableStateOf(false) }
 
-    // Auto-export the .fit file as soon as the workout reaches COMPLETED,
-    // whether that's a natural finish or a confirmed user stop. Idempotent.
+    // Auto-export the .fit file and persist ride to history as soon as the
+    // workout reaches COMPLETED (natural finish or confirmed user stop).
+    // Both calls are idempotent.
     LaunchedEffect(progress.workoutState) {
         if (progress.workoutState == WorkoutState.COMPLETED) {
             viewModel.exportFitSilently(context)
+            viewModel.saveRideToHistory()
         }
     }
 
