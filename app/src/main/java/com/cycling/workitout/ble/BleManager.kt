@@ -148,20 +148,26 @@ class BleManager(private val context: Context) {
             val deviceAddress = device.address
             val rssi = result.rssi
             
-            // Determine device type based on advertised services
+            // Determine device type based on advertised services + device name.
+            //
+            // Many smart trainers (Tacx Neo 2T, Wahoo KICKR, etc.) only advertise
+            // the Cycling Power service UUID in their BLE advertisement packets.
+            // FTMS is only discoverable *after* connecting and doing service
+            // discovery. So we can't rely solely on service UUIDs — we also match
+            // known trainer names to classify them as SMART_TRAINER up front.
+            val serviceUuids = result.scanRecord?.serviceUuids?.map { it.uuid }.orEmpty()
+            val nameLower = deviceName.lowercase()
+            val hasFtms = BleConstants.FITNESS_MACHINE_SERVICE_UUID in serviceUuids
+            val hasCps = BleConstants.CYCLING_POWER_SERVICE_UUID in serviceUuids
+            val hasHr = BleConstants.HEART_RATE_SERVICE_UUID in serviceUuids
+
+            val looksLikeTrainer = KNOWN_TRAINER_KEYWORDS.any { it in nameLower }
+
             val deviceType = when {
-                result.scanRecord?.serviceUuids?.any { 
-                    it.uuid == BleConstants.HEART_RATE_SERVICE_UUID 
-                } == true -> DeviceType.HEART_RATE_MONITOR
-                
-                result.scanRecord?.serviceUuids?.any { 
-                    it.uuid == BleConstants.CYCLING_POWER_SERVICE_UUID 
-                } == true -> DeviceType.POWER_METER
-                
-                result.scanRecord?.serviceUuids?.any { 
-                    it.uuid == BleConstants.FITNESS_MACHINE_SERVICE_UUID 
-                } == true -> DeviceType.SMART_TRAINER
-                
+                hasFtms -> DeviceType.SMART_TRAINER
+                hasCps && looksLikeTrainer -> DeviceType.SMART_TRAINER
+                hasHr -> DeviceType.HEART_RATE_MONITOR
+                hasCps -> DeviceType.POWER_METER
                 else -> DeviceType.UNKNOWN
             }
             
@@ -328,6 +334,21 @@ class BleManager(private val context: Context) {
         ftmsControlPointChar = null
         _isTrainerConnected.value = false
         _trainerControlAvailable.value = false
+
+        // Reset cadence tracking state
+        isFirstCscCrankMeasurement = true
+        previousCscCrankRevolutions = 0
+        previousCscCrankEventTime = 0
+        lastKnownCadence = 0
+        cadenceStaleCounter = 0
+
+        // Reset CPS crank state
+        isFirstCrankMeasurement = true
+        previousCrankRevolutions = 0
+        previousCrankEventTime = 0
+
+        powerSmoother.clear()
+
         Timber.d("Disconnected smart trainer")
     }
 
@@ -603,11 +624,15 @@ class BleManager(private val context: Context) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Timber.d("Smart trainer connected")
                     _isTrainerConnected.value = true
+                    // Smart trainers like the Tacx Neo 2T are also the power/cadence
+                    // source — flag this so the UI shows power as connected.
+                    _isPowerMeterConnected.value = true
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Timber.d("Smart trainer disconnected")
                     _isTrainerConnected.value = false
+                    _isPowerMeterConnected.value = false
                     _trainerControlAvailable.value = false
                     ftmsControlPointChar = null
                 }
@@ -616,54 +641,77 @@ class BleManager(private val context: Context) {
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
-
-            val ftmsService = gatt.getService(BleConstants.FITNESS_MACHINE_SERVICE_UUID)
-            if (ftmsService == null) {
-                Timber.e("FTMS service not found on trainer")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Timber.e("Trainer service discovery failed with status $status")
                 return
             }
 
-            // Subscribe to Indoor Bike Data notifications
-            ftmsService.getCharacteristic(BleConstants.INDOOR_BIKE_DATA_CHAR_UUID)?.let { char ->
-                gatt.setCharacteristicNotification(char, true)
-                val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                gatt.writeDescriptor(descriptor)
-                Timber.d("Enabled Indoor Bike Data notifications")
-            }
+            // Log every service so we can debug what the trainer actually exposes.
+            val allServices = gatt.services.map { it.uuid.toString() }
+            Timber.i("Trainer services discovered (${allServices.size}): $allServices")
 
-            // Cache the FTMS Control Point characteristic
-            ftmsService.getCharacteristic(BleConstants.FTMS_CONTROL_POINT_CHAR_UUID)?.let { char ->
-                ftmsControlPointChar = char
-                _trainerControlAvailable.value = true
-
-                // Enable indications on control point (uses INDICATION, not NOTIFICATION)
-                gatt.setCharacteristicNotification(char, true)
-                val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                descriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                // Will write after bike data descriptor write completes
-                Timber.d("FTMS Control Point cached, indications pending")
-            }
-
-            // Also try to get power/cadence from Cycling Power Service if available
+            val ftmsService = gatt.getService(BleConstants.FITNESS_MACHINE_SERVICE_UUID)
             val cpsService = gatt.getService(BleConstants.CYCLING_POWER_SERVICE_UUID)
-            cpsService?.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID)?.let { char ->
-                gatt.setCharacteristicNotification(char, true)
-                Timber.d("Trainer also exposes Cycling Power Service")
+
+            if (ftmsService != null) {
+                // ── Primary path: FTMS ──────────────────────────────────────
+                Timber.i("FTMS service found — using Indoor Bike Data + Control Point")
+
+                // Subscribe to Indoor Bike Data notifications
+                ftmsService.getCharacteristic(BleConstants.INDOOR_BIKE_DATA_CHAR_UUID)?.let { char ->
+                    gatt.setCharacteristicNotification(char, true)
+                    val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                    descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    gatt.writeDescriptor(descriptor)
+                    Timber.d("Enabled Indoor Bike Data notifications")
+                }
+
+                // Cache the FTMS Control Point characteristic
+                ftmsService.getCharacteristic(BleConstants.FTMS_CONTROL_POINT_CHAR_UUID)?.let { char ->
+                    ftmsControlPointChar = char
+                    _trainerControlAvailable.value = true
+                    gatt.setCharacteristicNotification(char, true)
+                    Timber.d("FTMS Control Point cached, indications pending")
+                }
+            } else if (cpsService != null) {
+                // ── Fallback: Cycling Power Service ─────────────────────────
+                // Some trainers (or trainers classified by name) don't expose
+                // FTMS. We still get power + cadence from CPS, just no ERG
+                // control.
+                Timber.w("FTMS not found — falling back to Cycling Power Service (no ERG control)")
+
+                cpsService.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID)?.let { char ->
+                    gatt.setCharacteristicNotification(char, true)
+                    val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                    descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    gatt.writeDescriptor(descriptor)
+                    Timber.d("Enabled Cycling Power notifications (fallback)")
+                }
+                // CSC subscription will be chained via onDescriptorWrite
+            } else {
+                Timber.e("Trainer has neither FTMS nor Cycling Power Service!")
             }
         }
 
+        @SuppressLint("MissingPermission")
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            Timber.d("Trainer descriptor write: char=${descriptor.characteristic.uuid}, status=$status")
+
             // After Indoor Bike Data descriptor is written, write Control Point descriptor
             if (descriptor.characteristic.uuid == BleConstants.INDOOR_BIKE_DATA_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
                 ftmsControlPointChar?.let { cpChar ->
                     val cpDescriptor = cpChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
                     cpDescriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                    @SuppressLint("MissingPermission")
                     val written = gatt.writeDescriptor(cpDescriptor)
                     Timber.d("Writing FTMS Control Point indication descriptor: $written")
                 }
+            }
+
+            // After CPS descriptor is written, chain CSC subscription for reliable cadence.
+            // BLE only allows one descriptor write at a time — we must wait for the
+            // CPS write to complete before subscribing to CSC.
+            if (descriptor.characteristic.uuid == BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
+                subscribeToCSC(gatt)
             }
         }
 
@@ -680,8 +728,23 @@ class BleManager(private val context: Context) {
                     }
                 }
                 BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID -> {
+                    // Fallback path: trainer without FTMS, reading from CPS
                     val (power, cadence) = parsePowerMeasurement(characteristic)
-                    _powerData.value = PowerData(power, cadence)
+                    val smoothedPower = powerSmoother.addReading(power)
+                    // Use CSC cadence if CPS didn't include crank data (cadence == 0)
+                    val effectiveCadence = if (cadence > 0) cadence else lastKnownCadence
+                    _powerData.value = PowerData(smoothedPower, effectiveCadence)
+                    Timber.d("Trainer CPS fallback - Power: $power W (smoothed: $smoothedPower), Cadence: $effectiveCadence rpm (raw CPS: $cadence)")
+                }
+                BleConstants.CSC_MEASUREMENT_CHAR_UUID -> {
+                    val cadence = parseCscMeasurement(characteristic)
+                    if (cadence >= 0) {
+                        lastKnownCadence = cadence
+                        // Update the power data with the fresh cadence from CSC
+                        val currentPower = _powerData.value.power
+                        _powerData.value = PowerData(currentPower, cadence)
+                        Timber.d("Trainer CSC cadence: $cadence rpm")
+                    }
                 }
             }
         }
@@ -792,10 +855,19 @@ class BleManager(private val context: Context) {
         }
     }
     
-    // Store previous crank data for cadence calculation
+    // Store previous crank data for cadence calculation (CPS)
     private var previousCrankRevolutions: Int = 0
     private var previousCrankEventTime: Int = 0
     private var isFirstCrankMeasurement = true
+
+    // Store previous crank data for CSC cadence calculation
+    private var previousCscCrankRevolutions: Int = 0
+    private var previousCscCrankEventTime: Int = 0
+    private var isFirstCscCrankMeasurement = true
+
+    // Last known non-zero cadence — used when CPS measurements omit crank data
+    private var lastKnownCadence: Int = 0
+    private var cadenceStaleCounter: Int = 0
     
     /**
      * Parse power and cadence from characteristic data
@@ -877,9 +949,20 @@ class BleManager(private val context: Context) {
             previousCrankRevolutions = crankRevolutions
             previousCrankEventTime = crankEventTime
             
+            if (cadence > 0) {
+                lastKnownCadence = cadence
+                cadenceStaleCounter = 0
+            }
             Timber.d( "Crank data - Revolutions: $crankRevolutions, Time: $crankEventTime, Cadence: $cadence RPM")
         } else {
-            Timber.d( "No crank revolution data in this measurement (flags: 0x${flags.toString(16)})")
+            // CPS measurement without crank data — use last known cadence but
+            // decay it to zero after ~5 seconds of missing data (prevent stale display)
+            cadenceStaleCounter++
+            if (cadenceStaleCounter > 5) {
+                lastKnownCadence = 0
+            }
+            cadence = lastKnownCadence
+            Timber.d( "No crank data in CPS (flags: 0x${flags.toString(16)}), using lastKnownCadence=$cadence")
         }
         
         // Apply power smoothing
@@ -889,6 +972,91 @@ class BleManager(private val context: Context) {
         return Pair(smoothedPower, cadence)
     }
     
+    /**
+     * Subscribe to the Cycling Speed and Cadence (CSC) service if the trainer
+     * exposes it. Called after CPS descriptor write completes so we don't
+     * clash with concurrent BLE descriptor writes.
+     */
+    @SuppressLint("MissingPermission")
+    private fun subscribeToCSC(gatt: BluetoothGatt) {
+        val cscService = gatt.getService(BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID)
+        if (cscService == null) {
+            Timber.d("CSC service (0x1816) not found on trainer — cadence from CPS only")
+            return
+        }
+
+        val cscChar = cscService.getCharacteristic(BleConstants.CSC_MEASUREMENT_CHAR_UUID)
+        if (cscChar == null) {
+            Timber.w("CSC Measurement characteristic not found")
+            return
+        }
+
+        gatt.setCharacteristicNotification(cscChar, true)
+        val descriptor = cscChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+        descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        val written = gatt.writeDescriptor(descriptor)
+        Timber.i("Subscribed to CSC Measurement for cadence: written=$written")
+    }
+
+    /**
+     * Parse Cycling Speed and Cadence (CSC) Measurement characteristic (0x2A5B).
+     * Returns calculated cadence in RPM, or -1 if not yet available.
+     *
+     * CSC Measurement format:
+     *   byte 0: flags
+     *     - bit 0: Wheel Revolution Data Present
+     *     - bit 1: Crank Revolution Data Present
+     *   followed by optional wheel data (4 + 2 bytes) and/or crank data (2 + 2 bytes)
+     */
+    private fun parseCscMeasurement(characteristic: BluetoothGattCharacteristic): Int {
+        val value = characteristic.value ?: return -1
+        if (value.isEmpty()) return -1
+
+        val flags = value[0].toInt() and 0xFF
+        var offset = 1
+
+        // Bit 0: Wheel Revolution Data Present
+        if (flags and 0x01 != 0) {
+            offset += 6 // Skip cumulative wheel revolutions (uint32) + last wheel event time (uint16)
+        }
+
+        // Bit 1: Crank Revolution Data Present
+        if (flags and 0x02 != 0 && value.size >= offset + 4) {
+            val crankRevolutions = (value[offset].toInt() and 0xFF) or
+                    ((value[offset + 1].toInt() and 0xFF) shl 8)
+            val crankEventTime = (value[offset + 2].toInt() and 0xFF) or
+                    ((value[offset + 3].toInt() and 0xFF) shl 8)
+
+            if (isFirstCscCrankMeasurement) {
+                isFirstCscCrankMeasurement = false
+                previousCscCrankRevolutions = crankRevolutions
+                previousCscCrankEventTime = crankEventTime
+                return -1
+            }
+
+            var revDelta = crankRevolutions - previousCscCrankRevolutions
+            var timeDelta = crankEventTime - previousCscCrankEventTime
+
+            // Handle uint16 rollover
+            if (revDelta < 0) revDelta += 65536
+            if (timeDelta < 0) timeDelta += 65536
+
+            previousCscCrankRevolutions = crankRevolutions
+            previousCscCrankEventTime = crankEventTime
+
+            if (timeDelta > 0) {
+                // CSC crank event time is in 1/1024 seconds
+                val cadence = ((revDelta * 60 * 1024) / timeDelta)
+                return if (cadence in 0..250) cadence else 0
+            }
+
+            // timeDelta == 0 means no crank movement — cadence is 0
+            return 0
+        }
+
+        return -1
+    }
+
     /**
      * Clean up resources
      */
@@ -900,3 +1068,30 @@ class BleManager(private val context: Context) {
         disconnectTrainer()
     }
 }
+
+/**
+ * Lowercase substrings found in the BLE names of popular smart trainers.
+ * Used during scanning to classify devices that advertise Cycling Power
+ * but not FTMS (FTMS is only discoverable after connecting on many trainers).
+ */
+private val KNOWN_TRAINER_KEYWORDS = listOf(
+    "tacx",         // Tacx Neo, Flux, Vortex, etc.
+    "kickr",        // Wahoo KICKR, KICKR Core, KICKR Snap
+    "direto",       // Elite Direto
+    "suito",        // Elite Suito
+    "zumo",         // Elite Zumo
+    "flux",         // Tacx Flux (also caught by "tacx")
+    "hammer",       // Saris Hammer / H3
+    "saris h",      // Saris H3, H2
+    "zwift hub",    // Zwift Hub
+    "jetblack",     // JetBlack trainers
+    "magene t",     // Magene T100/T300 trainers (not power meters)
+    "noza",         // Xplova Noza
+    "bushido",      // Tacx Bushido
+    "genius",       // Tacx Genius
+    "drivo",        // Elite Drivo
+    "kura",         // Elite Kura
+    "bkool",        // Bkool trainers
+    "kinetic",      // Kinetic smart trainers
+    "trainer",      // Generic fallback for devices with "trainer" in the name
+)

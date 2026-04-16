@@ -38,7 +38,18 @@ class DeviceRepository(
                 )
             )
         } else {
-            savedDeviceDao.updateConnectionInfo(bleDevice.address, System.currentTimeMillis())
+            // Always update the device type on re-pair. A device previously saved
+            // as POWER_METER might now correctly be classified as SMART_TRAINER
+            // (e.g. Tacx Neo 2T after the scan-classification fix).
+            val now = System.currentTimeMillis()
+            savedDeviceDao.insertDevice(
+                existing.copy(
+                    deviceType = bleDevice.deviceType,
+                    manufacturerName = bleDevice.name,
+                    lastConnectedTimestamp = now,
+                    connectionCount = existing.connectionCount + 1
+                )
+            )
         }
     }
 
