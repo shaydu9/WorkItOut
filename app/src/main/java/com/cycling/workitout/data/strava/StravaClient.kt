@@ -88,7 +88,7 @@ class StravaClient(private val tokens: StravaTokenStore) {
 
     private fun postForTokens(body: okhttp3.RequestBody): StravaTokenResponse {
         val req = Request.Builder()
-            .url("https://www.strava.com/api/v3/oauth/token")
+            .url("https://www.strava.com/oauth/token")
             .post(body)
             .build()
         http.newCall(req).execute().use { response ->
