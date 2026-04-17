@@ -20,13 +20,16 @@ import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.HeartRateData
 import com.cycling.workitout.data.PowerData
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
@@ -76,6 +79,22 @@ class BleManager(private val context: Context) {
     // Demo mode with mock data
     private val mockDataScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val mockDataGenerator = MockDataGenerator(mockDataScope)
+
+    // ── FTMS write queue ─────────────────────────────────────────────────────
+    // BLE GATT allows only one in-flight write at a time. All FTMS control-point
+    // opcodes are enqueued here and processed serially; each write waits for
+    // onCharacteristicWrite before the next one is sent (2 s timeout safety-net).
+    private val bleScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val ftmsWriteQueue = Channel<ByteArray>(capacity = Channel.UNLIMITED)
+    private var pendingWriteAck: CompletableDeferred<Boolean>? = null
+
+    init {
+        bleScope.launch {
+            for (data in ftmsWriteQueue) {
+                doFtmsWrite(data)
+            }
+        }
+    }
     
     private val _isDemoMode = MutableStateFlow(false)
     val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
@@ -395,17 +414,37 @@ class BleManager(private val context: Context) {
         }
     }
 
-    @SuppressLint("MissingPermission")
+    /**
+     * Enqueue an FTMS control-point write. Returns immediately; the write
+     * is executed serially by [bleScope] once the previous one is ACK'd.
+     */
     private fun writeFtmsControlPoint(data: ByteArray) {
-        val char = ftmsControlPointChar
-        val gatt = trainerGatt
-        if (char == null || gatt == null) {
-            Timber.w("FTMS control point not available")
+        if (ftmsControlPointChar == null || trainerGatt == null) {
+            Timber.w("FTMS control point not available — dropping opcode 0x${data[0].toString(16).padStart(2,'0')}")
             return
         }
+        ftmsWriteQueue.trySend(data)
+        Timber.d("FTMS write enqueued opcode 0x${data[0].toString(16).padStart(2,'0')} (queue depth ~${ftmsWriteQueue.isEmpty.not()})")
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun doFtmsWrite(data: ByteArray) {
+        val char = ftmsControlPointChar ?: return
+        val gatt = trainerGatt ?: return
+        val ack = CompletableDeferred<Boolean>()
+        pendingWriteAck = ack
         char.value = data
-        val success = gatt.writeCharacteristic(char)
-        Timber.d("FTMS write (opcode 0x${data[0].toString(16)}): success=$success")
+        val queued = gatt.writeCharacteristic(char)
+        if (!queued) {
+            Timber.w("FTMS writeCharacteristic returned false for opcode 0x${data[0].toString(16).padStart(2,'0')}")
+            pendingWriteAck = null
+            return
+        }
+        // Wait up to 2 s for the write ACK; proceed anyway on timeout so the
+        // queue doesn't jam if the trainer is slow.
+        val result = withTimeoutOrNull(2_000) { ack.await() } ?: false
+        Timber.d("FTMS write opcode 0x${data[0].toString(16).padStart(2,'0')} ACK=$result")
+        pendingWriteAck = null
     }
 
     /**
@@ -712,6 +751,19 @@ class BleManager(private val context: Context) {
             // CPS write to complete before subscribing to CSC.
             if (descriptor.characteristic.uuid == BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
                 subscribeToCSC(gatt)
+            }
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (characteristic.uuid == BleConstants.FTMS_CONTROL_POINT_CHAR_UUID) {
+                val success = status == BluetoothGatt.GATT_SUCCESS
+                Timber.d("FTMS onCharacteristicWrite status=$status success=$success")
+                pendingWriteAck?.complete(success)
             }
         }
 
