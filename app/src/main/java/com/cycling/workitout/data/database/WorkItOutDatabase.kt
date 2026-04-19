@@ -135,6 +135,10 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                     "workitout_database"
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    // IMPORTANT: do NOT add fallbackToDestructiveMigration() here.
+                    // It silently wipes the user's ride history (completed_rides) on any
+                    // schema bump without a matching migration. Every version jump must
+                    // have an explicit Migration registered above.
                     .build()
                 INSTANCE = instance
                 instance
