@@ -1,5 +1,10 @@
 package com.cycling.workitout.ui.firstrun
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,14 +20,31 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
+
+/**
+ * BLE runtime permissions we must hold before calling startScan()/connect().
+ * Android 12+ (API 31): BLUETOOTH_SCAN + BLUETOOTH_CONNECT.
+ * Android <12: ACCESS_FINE_LOCATION (required for BLE scans to return results).
+ */
+private val REQUIRED_BLE_PERMISSIONS: Array<String> =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT
+        )
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,6 +58,40 @@ fun FirstRunPairingScreen(
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    var permissionDenied by remember { mutableStateOf(false) }
+
+    // Holds the action to run once BLE permissions are granted. Lets a single
+    // launcher serve both the trainer and HR scan buttons.
+    var pendingPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val allGranted = REQUIRED_BLE_PERMISSIONS.all { result[it] == true }
+        if (allGranted) {
+            permissionDenied = false
+            pendingPermissionAction?.invoke()
+        } else {
+            permissionDenied = true
+        }
+        pendingPermissionAction = null
+    }
+
+    // Request-or-run: if we already hold the permissions run immediately,
+    // otherwise stash the action and fire the system prompt.
+    val runWithBlePermissions: (() -> Unit) -> Unit = { action ->
+        val allGranted = REQUIRED_BLE_PERMISSIONS.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted) {
+            action()
+        } else {
+            pendingPermissionAction = action
+            permissionLauncher.launch(REQUIRED_BLE_PERMISSIONS)
+        }
+    }
 
     // Auto-advance when the currently-pairing device connects.
     LaunchedEffect(trainerConnected, step) {
@@ -71,9 +127,10 @@ fun FirstRunPairingScreen(
                     deviceTypeFilter = DeviceType.SMART_TRAINER,
                     devices = devices,
                     isScanning = isScanning,
-                    onScan = { viewModel.startScan() },
+                    permissionDenied = permissionDenied,
+                    onScan = { runWithBlePermissions { viewModel.startScan() } },
                     onStopScan = { viewModel.stopScan() },
-                    onDeviceClick = { viewModel.connectDevice(it) },
+                    onDeviceClick = { runWithBlePermissions { viewModel.connectDevice(it) } },
                     onNext = { viewModel.nextStep() },
                     allowSkip = true
                 )
@@ -85,9 +142,10 @@ fun FirstRunPairingScreen(
                     deviceTypeFilter = DeviceType.HEART_RATE_MONITOR,
                     devices = devices,
                     isScanning = isScanning,
-                    onScan = { viewModel.startScan() },
+                    permissionDenied = permissionDenied,
+                    onScan = { runWithBlePermissions { viewModel.startScan() } },
                     onStopScan = { viewModel.stopScan() },
-                    onDeviceClick = { viewModel.connectDevice(it) },
+                    onDeviceClick = { runWithBlePermissions { viewModel.connectDevice(it) } },
                     onNext = { viewModel.nextStep() },
                     allowSkip = true
                 )
@@ -147,6 +205,7 @@ private fun PairingStepContent(
     deviceTypeFilter: DeviceType,
     devices: List<BleDevice>,
     isScanning: Boolean,
+    permissionDenied: Boolean,
     onScan: () -> Unit,
     onStopScan: () -> Unit,
     onDeviceClick: (BleDevice) -> Unit,
@@ -176,6 +235,14 @@ private fun PairingStepContent(
             Icon(Icons.Default.Bluetooth, contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text(if (isScanning) "Stop scan" else "Scan for devices")
+        }
+        if (permissionDenied) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Bluetooth permission is required to scan for sensors. Grant it in Settings → Apps → WorkItOut → Permissions, then tap Scan again.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
         }
         Spacer(Modifier.height(16.dp))
 

@@ -45,6 +45,19 @@ class BleManager(private val context: Context) {
     private var powerMeterGatt: BluetoothGatt? = null
     private var trainerGatt: BluetoothGatt? = null
     private var ftmsControlPointChar: BluetoothGattCharacteristic? = null
+    // Tacx FE-C write characteristic (used when the trainer speaks Tacx FE-C
+    // over BLE rather than FTMS). See [TacxFecClient].
+    private var fecWriteChar: BluetoothGattCharacteristic? = null
+
+    /**
+     * Which control protocol is active on the currently-connected trainer.
+     * - [ControlMode.FTMS]: standard Fitness Machine Service (0x1826).
+     * - [ControlMode.FEC]:  Tacx FE-C over BLE fallback (0x6e40fec1).
+     * - [ControlMode.NONE]: no ERG control available — power/cadence read-only.
+     */
+    enum class ControlMode { NONE, FTMS, FEC }
+    private val _controlMode = MutableStateFlow(ControlMode.NONE)
+    val controlMode: StateFlow<ControlMode> = _controlMode.asStateFlow()
     
     // State flows for discovered devices
     private val _discoveredDevices = MutableStateFlow<List<BleDevice>>(emptyList())
@@ -80,18 +93,53 @@ class BleManager(private val context: Context) {
     private val mockDataScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val mockDataGenerator = MockDataGenerator(mockDataScope)
 
-    // ── FTMS write queue ─────────────────────────────────────────────────────
-    // BLE GATT allows only one in-flight write at a time. All FTMS control-point
-    // opcodes are enqueued here and processed serially; each write waits for
-    // onCharacteristicWrite before the next one is sent (2 s timeout safety-net).
+    // ── Trainer control write queue ──────────────────────────────────────────
+    // BLE GATT allows only one in-flight write at a time. All trainer control
+    // writes (FTMS Control Point opcodes OR Tacx FE-C ANT frames) are enqueued
+    // here and processed serially; each write waits for onCharacteristicWrite
+    // before the next one is sent (2 s timeout safety-net). The processor
+    // inspects [_controlMode] at send time and dispatches to the right char.
     private val bleScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val ftmsWriteQueue = Channel<ByteArray>(capacity = Channel.UNLIMITED)
+    private val controlWriteQueue = Channel<ByteArray>(capacity = Channel.UNLIMITED)
     private var pendingWriteAck: CompletableDeferred<Boolean>? = null
+
+    // ── FE-C periodic resend ─────────────────────────────────────────────────
+    // Tacx FE-C trainers latch the last received Page 49 target, but real-world
+    // ERG feel is much tighter when the host re-sends the target every ~1 s
+    // (matches what TrainerRoad / Zwift do). If a packet is dropped or the
+    // trainer drifts, it gets re-nudged within a second instead of waiting for
+    // the next interval boundary. We only run this in [ControlMode.FEC]; FTMS
+    // trainers hold their target reliably without resend.
+    private var currentFecTargetWatts: Int? = null
+    private var fecResendJob: kotlinx.coroutines.Job? = null
+    private val FEC_RESEND_INTERVAL_MS = 1_000L
+
+    // ── Logging volume control ───────────────────────────────────────────────
+    // High-frequency logs (per-sample sensor readings, per-write ACKs, FE-C
+    // resends) are deafening outside of an active workout — and useless. We
+    // gate them behind [_workoutActive], which the workout view model flips on
+    // when the user starts a session and off when they stop. Connection
+    // lifecycle, errors, target-power changes, and service discovery logs are
+    // NOT gated — those are what you want to see when debugging pairing.
+    private val _workoutActive = MutableStateFlow(false)
+    fun setWorkoutActive(active: Boolean) {
+        if (_workoutActive.value == active) return
+        _workoutActive.value = active
+        Timber.i(if (active) "Workout started — verbose BLE logging ON"
+                  else         "Workout stopped — verbose BLE logging OFF")
+    }
+    private inline fun sampleLog(block: () -> String) {
+        if (_workoutActive.value) Timber.d(block())
+    }
 
     init {
         bleScope.launch {
-            for (data in ftmsWriteQueue) {
-                doFtmsWrite(data)
+            for (data in controlWriteQueue) {
+                when (_controlMode.value) {
+                    ControlMode.FTMS -> doFtmsWrite(data)
+                    ControlMode.FEC  -> doFecWrite(data)
+                    ControlMode.NONE -> Timber.w("Control write dropped — no trainer control mode")
+                }
             }
         }
     }
@@ -351,6 +399,10 @@ class BleManager(private val context: Context) {
         trainerGatt?.close()
         trainerGatt = null
         ftmsControlPointChar = null
+        fecWriteChar = null
+        stopFecResender()
+        currentFecTargetWatts = null
+        _controlMode.value = ControlMode.NONE
         _isTrainerConnected.value = false
         _trainerControlAvailable.value = false
 
@@ -372,37 +424,71 @@ class BleManager(private val context: Context) {
     }
 
     /**
-     * Request control of the FTMS trainer
+     * Request control of the trainer. FTMS mandates this handshake before any
+     * Set Target Power write; Tacx FE-C over BLE has no equivalent — Page 49
+     * frames are accepted directly, so this is a no-op in that mode.
      */
     fun requestFtmsControl() {
-        writeFtmsControlPoint(byteArrayOf(BleConstants.FTMS_REQUEST_CONTROL))
+        when (_controlMode.value) {
+            ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_REQUEST_CONTROL))
+            ControlMode.FEC  -> Timber.d("FE-C control: requestControl is implicit — skipping")
+            ControlMode.NONE -> Timber.w("requestFtmsControl dropped — no control mode")
+        }
     }
 
     /**
-     * Start or resume the FTMS workout
+     * Start/resume the workout. FTMS-only; FE-C trainers start ERG as soon as
+     * they receive a valid Page 49, so this is a no-op in FE-C mode.
      */
     fun startFtmsWorkout() {
-        writeFtmsControlPoint(byteArrayOf(BleConstants.FTMS_START_RESUME))
+        when (_controlMode.value) {
+            ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_START_RESUME))
+            ControlMode.FEC  -> Timber.d("FE-C control: start is implicit — skipping")
+            ControlMode.NONE -> Timber.w("startFtmsWorkout dropped — no control mode")
+        }
     }
 
     /**
-     * Stop the FTMS workout
+     * Stop the workout. For FE-C we send a Page 49 with 0 W which releases any
+     * resistance target and lets the trainer coast.
      */
     fun stopFtmsWorkout() {
-        writeFtmsControlPoint(byteArrayOf(BleConstants.FTMS_STOP_PAUSE, 0x01)) // 0x01 = Stop
+        when (_controlMode.value) {
+            ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_STOP_PAUSE, 0x01)) // 0x01 = Stop
+            ControlMode.FEC  -> {
+                stopFecResender()
+                currentFecTargetWatts = null
+                enqueueControlWrite(TacxFecClient.buildTargetPowerFrame(0))
+                Timber.d("FE-C control: stopped resend and sent Page 49 target=0W")
+            }
+            ControlMode.NONE -> Timber.w("stopFtmsWorkout dropped — no control mode")
+        }
     }
 
     /**
-     * Set target power on the trainer (ERG mode)
+     * Set target power (ERG). Dispatches to FTMS or Tacx FE-C depending on
+     * which control protocol the currently-connected trainer exposes.
      */
     fun setTargetPower(watts: Int) {
-        val data = byteArrayOf(
-            BleConstants.FTMS_SET_TARGET_POWER,
-            (watts and 0xFF).toByte(),
-            ((watts shr 8) and 0xFF).toByte()
-        )
-        writeFtmsControlPoint(data)
-        Timber.d("Set target power: $watts W")
+        when (_controlMode.value) {
+            ControlMode.FTMS -> {
+                val data = byteArrayOf(
+                    BleConstants.FTMS_SET_TARGET_POWER,
+                    (watts and 0xFF).toByte(),
+                    ((watts shr 8) and 0xFF).toByte()
+                )
+                enqueueControlWrite(data)
+                Timber.d("FTMS setTargetPower: $watts W")
+            }
+            ControlMode.FEC -> {
+                val frame = TacxFecClient.buildTargetPowerFrame(watts)
+                enqueueControlWrite(frame)
+                currentFecTargetWatts = watts
+                ensureFecResender()
+                Timber.d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B)")
+            }
+            ControlMode.NONE -> Timber.w("setTargetPower($watts) dropped — no control mode")
+        }
     }
 
     /**
@@ -415,16 +501,26 @@ class BleManager(private val context: Context) {
     }
 
     /**
-     * Enqueue an FTMS control-point write. Returns immediately; the write
-     * is executed serially by [bleScope] once the previous one is ACK'd.
+     * Enqueue a trainer control write. Returns immediately; the write is
+     * executed serially by [bleScope]. The queue processor looks at
+     * [_controlMode] at send time to pick the right characteristic.
      */
-    private fun writeFtmsControlPoint(data: ByteArray) {
-        if (ftmsControlPointChar == null || trainerGatt == null) {
-            Timber.w("FTMS control point not available — dropping opcode 0x${data[0].toString(16).padStart(2,'0')}")
-            return
+    private fun enqueueControlWrite(data: ByteArray) {
+        when (_controlMode.value) {
+            ControlMode.FTMS -> if (ftmsControlPointChar == null || trainerGatt == null) {
+                Timber.w("FTMS control point not available — dropping opcode 0x${data[0].toString(16).padStart(2,'0')}")
+                return
+            }
+            ControlMode.FEC -> if (fecWriteChar == null || trainerGatt == null) {
+                Timber.w("FE-C write char not available — dropping frame")
+                return
+            }
+            ControlMode.NONE -> {
+                Timber.w("No control mode — dropping write")
+                return
+            }
         }
-        ftmsWriteQueue.trySend(data)
-        Timber.d("FTMS write enqueued opcode 0x${data[0].toString(16).padStart(2,'0')} (queue depth ~${ftmsWriteQueue.isEmpty.not()})")
+        controlWriteQueue.trySend(data)
     }
 
     @SuppressLint("MissingPermission")
@@ -443,7 +539,59 @@ class BleManager(private val context: Context) {
         // Wait up to 2 s for the write ACK; proceed anyway on timeout so the
         // queue doesn't jam if the trainer is slow.
         val result = withTimeoutOrNull(2_000) { ack.await() } ?: false
-        Timber.d("FTMS write opcode 0x${data[0].toString(16).padStart(2,'0')} ACK=$result")
+        sampleLog { "FTMS write opcode 0x${data[0].toString(16).padStart(2,'0')} ACK=$result" }
+        pendingWriteAck = null
+    }
+
+    /**
+     * Start (or keep alive) the FE-C target-power resend loop. Re-sends the
+     * last [currentFecTargetWatts] every [FEC_RESEND_INTERVAL_MS] so the
+     * trainer stays tightly latched to the target — matches Zwift/TrainerRoad
+     * behavior over ANT+ FE-C. No-op if a job is already running.
+     */
+    private fun ensureFecResender() {
+        if (fecResendJob?.isActive == true) return
+        fecResendJob = bleScope.launch {
+            while (_controlMode.value == ControlMode.FEC) {
+                kotlinx.coroutines.delay(FEC_RESEND_INTERVAL_MS)
+                val target = currentFecTargetWatts ?: continue
+                if (fecWriteChar == null || trainerGatt == null) break
+                val frame = TacxFecClient.buildTargetPowerFrame(target)
+                controlWriteQueue.trySend(frame)
+                // Gated by workout-active: a once-per-second line is noise when
+                // nobody's riding, but essential for debugging ERG feel mid-ride.
+                sampleLog { "TacxFec resend: $target W" }
+            }
+        }
+    }
+
+    private fun stopFecResender() {
+        fecResendJob?.cancel()
+        fecResendJob = null
+    }
+
+    /**
+     * Write a Tacx FE-C ANT frame to the proprietary write characteristic.
+     * Uses WRITE_TYPE_DEFAULT (write-with-response) to match the Tacx FE-C
+     * convention observed in GoldenCheetah/Wahoo reference clients — the
+     * trainer ACKs these writes, which also gives us flow control for free.
+     */
+    @SuppressLint("MissingPermission")
+    private suspend fun doFecWrite(data: ByteArray) {
+        val char = fecWriteChar ?: return
+        val gatt = trainerGatt ?: return
+        val ack = CompletableDeferred<Boolean>()
+        pendingWriteAck = ack
+        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        char.value = data
+        val queued = gatt.writeCharacteristic(char)
+        if (!queued) {
+            Timber.w("FE-C writeCharacteristic returned false")
+            pendingWriteAck = null
+            return
+        }
+        val result = withTimeoutOrNull(2_000) { ack.await() } ?: false
+        sampleLog { "FE-C write ACK=$result (${data.size}B)" }
         pendingWriteAck = null
     }
 
@@ -601,7 +749,7 @@ class BleManager(private val context: Context) {
             if (characteristic.uuid == BleConstants.HEART_RATE_MEASUREMENT_CHAR_UUID) {
                 val heartRate = parseHeartRate(characteristic)
                 _heartRateData.value = HeartRateData(heartRate)
-                Timber.d( "Heart rate: $heartRate bpm")
+                sampleLog { "Heart rate: $heartRate bpm" }
             }
         }
     }
@@ -648,7 +796,7 @@ class BleManager(private val context: Context) {
             if (characteristic.uuid == BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID) {
                 val (power, cadence) = parsePowerMeasurement(characteristic)
                 _powerData.value = PowerData(power, cadence)
-                Timber.d( "Power: $power W, Cadence: $cadence rpm")
+                sampleLog { "Power: $power W, Cadence: $cadence rpm" }
             }
         }
     }
@@ -695,6 +843,7 @@ class BleManager(private val context: Context) {
             if (ftmsService != null) {
                 // ── Primary path: FTMS ──────────────────────────────────────
                 Timber.i("FTMS service found — using Indoor Bike Data + Control Point")
+                _controlMode.value = ControlMode.FTMS
 
                 // Subscribe to Indoor Bike Data notifications
                 ftmsService.getCharacteristic(BleConstants.INDOOR_BIKE_DATA_CHAR_UUID)?.let { char ->
@@ -712,23 +861,39 @@ class BleManager(private val context: Context) {
                     gatt.setCharacteristicNotification(char, true)
                     Timber.d("FTMS Control Point cached, indications pending")
                 }
-            } else if (cpsService != null) {
-                // ── Fallback: Cycling Power Service ─────────────────────────
-                // Some trainers (or trainers classified by name) don't expose
-                // FTMS. We still get power + cadence from CPS, just no ERG
-                // control.
-                Timber.w("FTMS not found — falling back to Cycling Power Service (no ERG control)")
-
-                cpsService.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID)?.let { char ->
-                    gatt.setCharacteristicNotification(char, true)
-                    val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                    descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
-                    Timber.d("Enabled Cycling Power notifications (fallback)")
-                }
-                // CSC subscription will be chained via onDescriptorWrite
             } else {
-                Timber.e("Trainer has neither FTMS nor Cycling Power Service!")
+                // ── No FTMS — try Tacx FE-C over BLE as a control fallback ──
+                // This covers Tacx Neo / Flux / etc. in "FE-C BLE" mode. Power
+                // and cadence still come from CPS (below); only the ERG control
+                // path changes.
+                val fecService = gatt.getService(BleConstants.TACX_FEC_SERVICE_UUID)
+                if (fecService != null) {
+                    val writeChar = fecService.getCharacteristic(BleConstants.TACX_FEC_WRITE_CHAR_UUID)
+                    if (writeChar != null) {
+                        fecWriteChar = writeChar
+                        _controlMode.value = ControlMode.FEC
+                        _trainerControlAvailable.value = true
+                        Timber.i("Tacx FE-C over BLE detected — ERG via ANT+ Page 49 on ${writeChar.uuid}")
+                    } else {
+                        Timber.w("Tacx FE-C service found but write char (6e40fec3) missing")
+                    }
+                } else {
+                    Timber.w("FTMS not found and no Tacx FE-C service — read-only (no ERG control)")
+                }
+
+                // Regardless of control path, subscribe to CPS for power + cadence.
+                if (cpsService != null) {
+                    cpsService.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID)?.let { char ->
+                        gatt.setCharacteristicNotification(char, true)
+                        val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                        descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(descriptor)
+                        Timber.d("Enabled Cycling Power notifications (CPS data path)")
+                    }
+                    // CSC subscription chains via onDescriptorWrite below.
+                } else {
+                    Timber.e("Trainer exposes neither FTMS nor CPS — power/cadence unavailable")
+                }
             }
         }
 
@@ -760,10 +925,17 @@ class BleManager(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
-            if (characteristic.uuid == BleConstants.FTMS_CONTROL_POINT_CHAR_UUID) {
-                val success = status == BluetoothGatt.GATT_SUCCESS
-                Timber.d("FTMS onCharacteristicWrite status=$status success=$success")
-                pendingWriteAck?.complete(success)
+            when (characteristic.uuid) {
+                BleConstants.FTMS_CONTROL_POINT_CHAR_UUID -> {
+                    val success = status == BluetoothGatt.GATT_SUCCESS
+                    sampleLog { "FTMS onCharacteristicWrite status=$status success=$success" }
+                    pendingWriteAck?.complete(success)
+                }
+                BleConstants.TACX_FEC_WRITE_CHAR_UUID -> {
+                    val success = status == BluetoothGatt.GATT_SUCCESS
+                    sampleLog { "FE-C onCharacteristicWrite status=$status success=$success" }
+                    pendingWriteAck?.complete(success)
+                }
             }
         }
 
@@ -786,7 +958,7 @@ class BleManager(private val context: Context) {
                     // Use CSC cadence if CPS didn't include crank data (cadence == 0)
                     val effectiveCadence = if (cadence > 0) cadence else lastKnownCadence
                     _powerData.value = PowerData(smoothedPower, effectiveCadence)
-                    Timber.d("Trainer CPS fallback - Power: $power W (smoothed: $smoothedPower), Cadence: $effectiveCadence rpm (raw CPS: $cadence)")
+                    sampleLog { "Trainer CPS fallback - Power: $power W (smoothed: $smoothedPower), Cadence: $effectiveCadence rpm (raw CPS: $cadence)" }
                 }
                 BleConstants.CSC_MEASUREMENT_CHAR_UUID -> {
                     val cadence = parseCscMeasurement(characteristic)
@@ -795,7 +967,7 @@ class BleManager(private val context: Context) {
                         // Update the power data with the fresh cadence from CSC
                         val currentPower = _powerData.value.power
                         _powerData.value = PowerData(currentPower, cadence)
-                        Timber.d("Trainer CSC cadence: $cadence rpm")
+                        sampleLog { "Trainer CSC cadence: $cadence rpm" }
                     }
                 }
             }
@@ -869,7 +1041,7 @@ class BleManager(private val context: Context) {
         if (power > 0 || cadence > 0) {
             val smoothedPower = powerSmoother.addReading(power)
             _powerData.value = PowerData(smoothedPower, cadence)
-            Timber.d("Indoor Bike Data - Power: $power W (smoothed: $smoothedPower), Cadence: $cadence RPM")
+            sampleLog { "Indoor Bike Data - Power: $power W (smoothed: $smoothedPower), Cadence: $cadence RPM" }
         }
 
         // Heart Rate (bit 9) - uint8
@@ -939,7 +1111,7 @@ class BleManager(private val context: Context) {
         // Next two bytes contain instantaneous power (signed 16-bit, little-endian)
         val power = (value[2].toInt() and 0xFF) or ((value[3].toInt() and 0xFF) shl 8)
         
-        Timber.d( "Power flags: 0x${flags.toString(16)}, Power: $power W, Data size: ${value.size} bytes")
+        sampleLog { "Power flags: 0x${flags.toString(16)}, Power: $power W, Data size: ${value.size} bytes" }
         
         var cadence = 0
         var offset = 4 // Start after power field
@@ -1005,7 +1177,7 @@ class BleManager(private val context: Context) {
                 lastKnownCadence = cadence
                 cadenceStaleCounter = 0
             }
-            Timber.d( "Crank data - Revolutions: $crankRevolutions, Time: $crankEventTime, Cadence: $cadence RPM")
+            sampleLog { "Crank data - Revolutions: $crankRevolutions, Time: $crankEventTime, Cadence: $cadence RPM" }
         } else {
             // CPS measurement without crank data — use last known cadence but
             // decay it to zero after ~5 seconds of missing data (prevent stale display)
@@ -1014,12 +1186,12 @@ class BleManager(private val context: Context) {
                 lastKnownCadence = 0
             }
             cadence = lastKnownCadence
-            Timber.d( "No crank data in CPS (flags: 0x${flags.toString(16)}), using lastKnownCadence=$cadence")
+            sampleLog { "No crank data in CPS (flags: 0x${flags.toString(16)}), using lastKnownCadence=$cadence" }
         }
         
         // Apply power smoothing
         val smoothedPower = powerSmoother.addReading(power)
-        Timber.d( "Raw power: $power W, Smoothed power: $smoothedPower W (${powerSmoother.getSmoothingWindow()}s average)")
+        sampleLog { "Raw power: $power W, Smoothed power: $smoothedPower W (${powerSmoother.getSmoothingWindow()}s average)" }
         
         return Pair(smoothedPower, cadence)
     }

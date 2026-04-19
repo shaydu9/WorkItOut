@@ -116,6 +116,10 @@ class WorkoutViewModel(
         }
 
         workoutEngine.onWorkoutStarted = {
+            // Flip BLE into verbose-logging mode: per-sample sensor reads and
+            // per-write ACKs are only useful mid-ride, so the manager keeps
+            // quiet until a workout is actually running.
+            bleManager.setWorkoutActive(true)
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
                 bleManager.requestFtmsControl()
                 bleManager.startFtmsWorkout()
@@ -126,6 +130,7 @@ class WorkoutViewModel(
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
                 bleManager.stopFtmsWorkout()
             }
+            bleManager.setWorkoutActive(false)
         }
 
         // Forward sensor data to engine for recording

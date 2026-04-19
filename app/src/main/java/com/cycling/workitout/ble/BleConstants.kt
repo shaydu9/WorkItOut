@@ -36,7 +36,23 @@ object BleConstants {
 
     // Client Characteristic Configuration Descriptor (for enabling notifications)
     val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-    
+
+    // ── Tacx FE-C over BLE ───────────────────────────────────────────────
+    // Tacx's proprietary Nordic-UART-style service that tunnels ANT+ FE-C
+    // frames. Used as a fallback ERG control path on trainers (e.g. Tacx Neo
+    // 2T) that ship in "FE-C BLE" mode rather than FTMS mode.
+    val TACX_FEC_SERVICE_UUID: UUID = UUID.fromString("6e40fec1-b5a3-f393-e0a9-e50e24dcca9e")
+    //   Write (commands from app → trainer). Acknowledged, WRITE_TYPE_DEFAULT.
+    val TACX_FEC_WRITE_CHAR_UUID: UUID = UUID.fromString("6e40fec3-b5a3-f393-e0a9-e50e24dcca9e")
+    //   Notify (trainer → app broadcast: Pages 16, 25, etc.)
+    val TACX_FEC_NOTIFY_CHAR_UUID: UUID = UUID.fromString("6e40fec2-b5a3-f393-e0a9-e50e24dcca9e")
+
+    // ANT+ FE-C message framing constants
+    const val ANT_SYNC: Byte = 0xA4.toByte()
+    const val ANT_MSG_ACKNOWLEDGED_DATA: Byte = 0x4F
+    const val ANT_FEC_CHANNEL: Byte = 0x05
+    const val ANT_PAGE_TARGET_POWER: Byte = 0x31   // Page 49
+
     // Scan timeout
     const val SCAN_PERIOD: Long = 10000 // 10 seconds
 }

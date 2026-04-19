@@ -83,12 +83,17 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * If [intent] is the `workitout://strava-callback?code=…` deep link from the
-     * Custom Tab, hand it to the Strava repository to exchange for tokens.
+     * If [intent] is the `workitout://workitout/strava-callback?code=…` deep link
+     * from the Custom Tab, hand it to the Strava repository to exchange for tokens.
+     * Host is `workitout` to match Strava's Authorization Callback Domain; the
+     * `/strava-callback` path distinguishes this from any future deep links.
      */
     private fun handleStravaCallbackIfPresent(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "workitout" && data.host == "strava-callback") {
+        if (data.scheme == "workitout" &&
+            data.host == "workitout" &&
+            data.path?.startsWith("/strava-callback") == true
+        ) {
             Timber.i("Strava OAuth callback received")
             WorkItOutApplication.stravaRepository.handleAuthCallback(data)
         } else if (intent.action == Intent.ACTION_VIEW) {

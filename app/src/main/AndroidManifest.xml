@@ -43,8 +43,10 @@
             </intent-filter>
 
             <!-- Strava OAuth redirect. Matches StravaClient.REDIRECT_URI
-                 (workitout://strava-callback) and the Authorization Callback Domain
-                 configured on the Strava developer app. singleTask above ensures the
+                 (workitout://workitout/strava-callback) and the Authorization Callback
+                 Domain `workitout` configured on the Strava developer app. Strava
+                 compares the URI host (`workitout`) against the callback domain, which
+                 is why host and domain must agree. singleTask above ensures the
                  redirect returns into the existing activity instead of spawning a copy. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
@@ -52,7 +54,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="workitout"
-                    android:host="strava-callback" />
+                    android:host="workitout"
+                    android:pathPrefix="/strava-callback" />
             </intent-filter>
         </activity>
 

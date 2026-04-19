@@ -188,7 +188,13 @@ class StravaClient(private val tokens: StravaTokenStore) {
          * Must match the deep link registered in AndroidManifest.xml *and*
          * match the Authorization Callback Domain configured in the Strava
          * app settings (`workitout`).
+         *
+         * Strava validates `redirect_uri` by comparing the URI's HOST (not
+         * scheme) against the configured callback domain. So with domain
+         * `workitout`, the host segment must also be `workitout` — hence the
+         * slightly odd-looking `workitout://workitout/strava-callback` shape
+         * (scheme=workitout, host=workitout, path=/strava-callback).
          */
-        const val REDIRECT_URI = "workitout://strava-callback"
+        const val REDIRECT_URI = "workitout://workitout/strava-callback"
     }
 }
