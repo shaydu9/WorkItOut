@@ -143,6 +143,25 @@ class WorkoutViewModel(
                     workoutEngine.recordDataPoint(power, hr, cadence)
                 }
         }
+
+        // ── Pre-send the first interval target as soon as the screen opens ──
+        // Previously we waited until the user tapped Start before sending any
+        // Page 49 frame. On Tacx FE-C trainers that means the first pedal
+        // stroke races the trainer's ERG latch — the rider often gets 20-30s
+        // of overshoot before the target is actually honored. By pushing the
+        // target on screen entry, combined with the FE-C burst window in
+        // BleManager.setTargetPower, the trainer is already locked into ERG
+        // by the time the user hits Start.
+        viewModelScope.launch {
+            if (!bleManager.isDemoMode.value && _ergEnabled.value) {
+                val firstTarget = workoutEngine.progress.value.targetPowerWatts
+                if (firstTarget > 0) {
+                    bleManager.requestFtmsControl()
+                    bleManager.setTargetPower(firstTarget)
+                    Timber.i("Pre-sent first interval target $firstTarget W on screen entry")
+                }
+            }
+        }
     }
 
     fun startWorkout() = workoutEngine.start()

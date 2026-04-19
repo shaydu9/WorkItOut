@@ -114,6 +114,20 @@ class BleManager(private val context: Context) {
     private var fecResendJob: kotlinx.coroutines.Job? = null
     private val FEC_RESEND_INTERVAL_MS = 1_000L
 
+    // ── FE-C startup burst ───────────────────────────────────────────────────
+    // The Tacx Neo 2T (and probably other FE-C trainers) won't latch ERG from
+    // a single Page 49 frame — it needs several consecutive frames to commit.
+    // At 1 Hz steady-state that takes 20–30 seconds of pedaling, which is why
+    // early in the workout the rider sees raw power overshoot the target by
+    // 2× before the trainer "catches up". Solution: every time the host sets
+    // a new target, we open a short "burst window" during which the resend
+    // loop ticks at ~3 Hz (300 ms) instead of 1 Hz. The window closes
+    // automatically; steady-state rides resume normal cadence. Cost is a few
+    // extra BLE writes per interval boundary — negligible.
+    private val FEC_BURST_INTERVAL_MS = 300L
+    private val FEC_BURST_DURATION_MS = 3_000L
+    @Volatile private var fecBurstUntilMs: Long = 0L
+
     // ── Logging volume control ───────────────────────────────────────────────
     // High-frequency logs (per-sample sensor readings, per-write ACKs, FE-C
     // resends) are deafening outside of an active workout — and useless. We
@@ -484,8 +498,15 @@ class BleManager(private val context: Context) {
                 val frame = TacxFecClient.buildTargetPowerFrame(watts)
                 enqueueControlWrite(frame)
                 currentFecTargetWatts = watts
+                // Open/extend the burst window so the resend loop ticks at
+                // ~3 Hz for the next [FEC_BURST_DURATION_MS]. Each target
+                // change (workout start, interval boundary, ERG re-enable)
+                // gets the same aggressive re-send treatment, which pulls
+                // the Tacx Neo 2T into ERG mode before the rider can
+                // overshoot the target.
+                fecBurstUntilMs = System.currentTimeMillis() + FEC_BURST_DURATION_MS
                 ensureFecResender()
-                Timber.d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B)")
+                Timber.d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B) — burst for ${FEC_BURST_DURATION_MS}ms")
             }
             ControlMode.NONE -> Timber.w("setTargetPower($watts) dropped — no control mode")
         }
@@ -553,14 +574,20 @@ class BleManager(private val context: Context) {
         if (fecResendJob?.isActive == true) return
         fecResendJob = bleScope.launch {
             while (_controlMode.value == ControlMode.FEC) {
-                kotlinx.coroutines.delay(FEC_RESEND_INTERVAL_MS)
+                // Pick cadence based on whether we're inside a burst window.
+                // Burst windows are opened from [setTargetPower] on every
+                // target change; they naturally expire so steady-state rides
+                // settle back to 1 Hz.
+                val now = System.currentTimeMillis()
+                val interval = if (now < fecBurstUntilMs) FEC_BURST_INTERVAL_MS else FEC_RESEND_INTERVAL_MS
+                kotlinx.coroutines.delay(interval)
                 val target = currentFecTargetWatts ?: continue
                 if (fecWriteChar == null || trainerGatt == null) break
                 val frame = TacxFecClient.buildTargetPowerFrame(target)
                 controlWriteQueue.trySend(frame)
                 // Gated by workout-active: a once-per-second line is noise when
                 // nobody's riding, but essential for debugging ERG feel mid-ride.
-                sampleLog { "TacxFec resend: $target W" }
+                sampleLog { "TacxFec resend: $target W (interval=${interval}ms)" }
             }
         }
     }
