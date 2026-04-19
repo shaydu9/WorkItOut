@@ -111,6 +111,33 @@ class AiWorkoutService {
             "ANTHROPIC_API_KEY is not set in local.properties"
         }
 
+        // Up to two tries: first attempt at the given prompt, second attempt tacks on
+        // an explicit "your last answer was invalid" nudge. Hard validation failures
+        // (too few intervals, drift >10%) trigger the retry; soft fixes (minor scale,
+        // per-interval clamp) happen silently with a Timber warning.
+        var lastError: String? = null
+        for (attempt in 1..2) {
+            val messageForThisAttempt = if (attempt == 1) userMessage else buildString {
+                append(userMessage)
+                append("\n\nYour previous response was invalid: ")
+                append(lastError)
+                append("\nReturn a corrected JSON object. The sum of durationSec MUST match the total.")
+            }
+
+            val dto = requestDto(apiKey, messageForThisAttempt)
+            if (dto == null) {
+                lastError = "response was not valid JSON"
+            } else {
+                val result = buildWorkoutOrNull(dto, ftp, expectedTotalSec)
+                if (result.workout != null) return@withContext result.workout
+                lastError = result.rejectionReason
+                Timber.w("AI workout attempt $attempt rejected: $lastError")
+            }
+        }
+        throw IllegalStateException("Claude returned an invalid workout twice: $lastError")
+    }
+
+    private fun requestDto(apiKey: String, userMessage: String): AiWorkoutDto? {
         val body = buildJsonObject {
             put("model", "claude-sonnet-4-5")  // bump to claude-sonnet-4-6 once verified available
             put("max_tokens", 2048)
@@ -145,11 +172,14 @@ class AiWorkoutService {
             }
             val text = extractText(responseBody)
             Timber.d("AI raw text: $text")
-            val jsonText = extractJsonObject(text)
-                ?: throw IllegalStateException("AI response did not contain a JSON object: $text")
+            val jsonText = extractJsonObject(text) ?: return null
             Timber.d("AI workout JSON: $jsonText")
-            val dto = json.decodeFromString(AiWorkoutDto.serializer(), jsonText)
-            dtoToWorkout(dto, ftp, expectedTotalSec)
+            return try {
+                json.decodeFromString(AiWorkoutDto.serializer(), jsonText)
+            } catch (t: Throwable) {
+                Timber.w(t, "AI JSON failed to decode")
+                null
+            }
         }
     }
 
@@ -191,48 +221,95 @@ class AiWorkoutService {
         return null
     }
 
-    private fun dtoToWorkout(
+    /** Outcome of validation: either a workout, or a human-readable rejection reason. */
+    internal data class BuildResult(val workout: WorkoutDefinition?, val rejectionReason: String?)
+
+    /**
+     * Validate the DTO and either build a [WorkoutDefinition] or explain why we can't.
+     *
+     * Soft repairs (logged, not rejected):
+     *  - targetPct clamped to [MIN_TARGET_PCT, MAX_TARGET_PCT] per interval.
+     *  - per-interval durationSec clamped to [MIN_INTERVAL_SEC, MAX_INTERVAL_SEC].
+     *  - Total-duration drift ≤ SOFT_DRIFT_RATIO is silently rescaled to hit the target.
+     *
+     * Hard rejections (caller retries):
+     *  - Fewer than MIN_INTERVALS intervals.
+     *  - Drift > HARD_DRIFT_RATIO from the requested total.
+     */
+    internal fun buildWorkoutOrNull(
         dto: AiWorkoutDto,
         ftp: Int,
         expectedTotalSec: Int?
-    ): WorkoutDefinition {
+    ): BuildResult {
+        if (dto.intervals.size < MIN_INTERVALS) {
+            return BuildResult(null, "only ${dto.intervals.size} intervals (need at least $MIN_INTERVALS)")
+        }
+
+        var clampedTarget = 0
+        var clampedDuration = 0
         val intervals = dto.intervals.map { i ->
+            val targetPctClamped = i.targetPct.coerceIn(MIN_TARGET_PCT, MAX_TARGET_PCT)
+            if (targetPctClamped != i.targetPct) clampedTarget++
+
+            val durClamped = i.durationSec.coerceIn(MIN_INTERVAL_SEC, MAX_INTERVAL_SEC)
+            if (durClamped != i.durationSec) clampedDuration++
+
             WorkoutIntervalDef(
-                durationSeconds = i.durationSec.coerceAtLeast(1),
-                targetPowerWatts = (i.targetPct * ftp).roundToInt().coerceAtLeast(40),
+                durationSeconds = durClamped,
+                targetPowerWatts = (targetPctClamped * ftp).roundToInt().coerceAtLeast(40),
                 name = i.name,
                 zone = parseZone(i.zone)
             )
         }.toMutableList()
+        if (clampedTarget > 0) Timber.w("AI validation: clamped $clampedTarget out-of-range interval targetPct values")
+        if (clampedDuration > 0) Timber.w("AI validation: clamped $clampedDuration out-of-range interval durations")
 
-        // If duration mismatch, scale proportionally to hit the expected total.
+        // Duration-sum reconciliation (only when the caller asked for a specific total).
         if (expectedTotalSec != null) {
             val sum = intervals.sumOf { it.durationSeconds }
-            if (sum != expectedTotalSec && sum > 0) {
-                val scale = expectedTotalSec.toDouble() / sum
-                for (idx in intervals.indices) {
-                    intervals[idx] = intervals[idx].copy(
-                        durationSeconds = (intervals[idx].durationSeconds * scale).roundToInt().coerceAtLeast(1)
-                    )
+            if (sum <= 0) return BuildResult(null, "all intervals had zero duration")
+
+            val driftRatio = kotlin.math.abs(sum - expectedTotalSec).toDouble() / expectedTotalSec
+            when {
+                driftRatio > HARD_DRIFT_RATIO -> {
+                    return BuildResult(null, "total duration ${sum}s differs from requested ${expectedTotalSec}s by ${(driftRatio * 100).roundToInt()}%")
                 }
-                // Fix any rounding drift on the last interval.
-                val newSum = intervals.sumOf { it.durationSeconds }
-                val drift = expectedTotalSec - newSum
-                if (drift != 0 && intervals.isNotEmpty()) {
-                    val last = intervals.last()
-                    intervals[intervals.size - 1] = last.copy(
-                        durationSeconds = (last.durationSeconds + drift).coerceAtLeast(1)
-                    )
+                sum != expectedTotalSec -> {
+                    Timber.w("AI validation: rescaling ${sum}s → ${expectedTotalSec}s (drift ${(driftRatio * 100).roundToInt()}%)")
+                    val scale = expectedTotalSec.toDouble() / sum
+                    for (idx in intervals.indices) {
+                        intervals[idx] = intervals[idx].copy(
+                            durationSeconds = (intervals[idx].durationSeconds * scale).roundToInt().coerceAtLeast(1)
+                        )
+                    }
+                    val newSum = intervals.sumOf { it.durationSeconds }
+                    val drift = expectedTotalSec - newSum
+                    if (drift != 0) {
+                        val last = intervals.last()
+                        intervals[intervals.size - 1] = last.copy(
+                            durationSeconds = (last.durationSeconds + drift).coerceAtLeast(1)
+                        )
+                    }
                 }
             }
         }
 
-        return WorkoutDefinition(
+        val workout = WorkoutDefinition(
             id = "ai_${System.currentTimeMillis()}",
             name = dto.name,
             description = dto.description,
             intervals = intervals
         )
+        return BuildResult(workout, null)
+    }
+
+    companion object {
+        internal const val MIN_TARGET_PCT = 0.30
+        internal const val MAX_TARGET_PCT = 1.70
+        internal const val MIN_INTERVAL_SEC = 10
+        internal const val MAX_INTERVAL_SEC = 3600
+        internal const val MIN_INTERVALS = 3
+        internal const val HARD_DRIFT_RATIO = 0.10   // >10% drift triggers a retry; anything smaller is silently rescaled
     }
 
     /**
