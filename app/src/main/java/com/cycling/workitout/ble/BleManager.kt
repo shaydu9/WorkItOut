@@ -9,12 +9,14 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Build
 import android.os.ParcelUuid
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
@@ -545,13 +547,44 @@ class BleManager(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
+    @Suppress("DEPRECATION")
+    private fun writeCharCompat(
+        gatt: BluetoothGatt,
+        char: BluetoothGattCharacteristic,
+        data: ByteArray,
+        writeType: Int = char.writeType,
+    ): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeCharacteristic(char, data, writeType) == BluetoothStatusCodes.SUCCESS
+        } else {
+            char.writeType = writeType
+            char.value = data
+            gatt.writeCharacteristic(char)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    @Suppress("DEPRECATION")
+    private fun writeDescCompat(
+        gatt: BluetoothGatt,
+        desc: BluetoothGattDescriptor,
+        value: ByteArray,
+    ): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeDescriptor(desc, value) == BluetoothStatusCodes.SUCCESS
+        } else {
+            desc.value = value
+            gatt.writeDescriptor(desc)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private suspend fun doFtmsWrite(data: ByteArray) {
         val char = ftmsControlPointChar ?: return
         val gatt = trainerGatt ?: return
         val ack = CompletableDeferred<Boolean>()
         pendingWriteAck = ack
-        char.value = data
-        val queued = gatt.writeCharacteristic(char)
+        val queued = writeCharCompat(gatt, char, data)
         if (!queued) {
             Timber.w("FTMS writeCharacteristic returned false for opcode 0x${data[0].toString(16).padStart(2,'0')}")
             pendingWriteAck = null
@@ -609,9 +642,7 @@ class BleManager(private val context: Context) {
         val gatt = trainerGatt ?: return
         val ack = CompletableDeferred<Boolean>()
         pendingWriteAck = ack
-        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        char.value = data
-        val queued = gatt.writeCharacteristic(char)
+        val queued = writeCharCompat(gatt, char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
         if (!queued) {
             Timber.w("FE-C writeCharacteristic returned false")
             pendingWriteAck = null
@@ -763,9 +794,10 @@ class BleManager(private val context: Context) {
                     gatt.setCharacteristicNotification(it, true)
                     
                     val descriptor = it.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                    descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
-                    
+                    descriptor?.let { d ->
+                        writeDescCompat(gatt, d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    }
+
                     Timber.d( "Enabled heart rate notifications")
                 }
             }
@@ -810,9 +842,10 @@ class BleManager(private val context: Context) {
                     gatt.setCharacteristicNotification(it, true)
                     
                     val descriptor = it.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                    descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
-                    
+                    descriptor?.let { d ->
+                        writeDescCompat(gatt, d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    }
+
                     Timber.d( "Enabled power meter notifications")
                 }
             }
@@ -876,8 +909,9 @@ class BleManager(private val context: Context) {
                 ftmsService.getCharacteristic(BleConstants.INDOOR_BIKE_DATA_CHAR_UUID)?.let { char ->
                     gatt.setCharacteristicNotification(char, true)
                     val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                    descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
+                    descriptor?.let { d ->
+                        writeDescCompat(gatt, d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    }
                     Timber.d("Enabled Indoor Bike Data notifications")
                 }
 
@@ -913,8 +947,9 @@ class BleManager(private val context: Context) {
                     cpsService.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID)?.let { char ->
                         gatt.setCharacteristicNotification(char, true)
                         val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                        descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(descriptor)
+                        descriptor?.let { d ->
+                            writeDescCompat(gatt, d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                        }
                         Timber.d("Enabled Cycling Power notifications (CPS data path)")
                     }
                     // CSC subscription chains via onDescriptorWrite below.
@@ -932,8 +967,9 @@ class BleManager(private val context: Context) {
             if (descriptor.characteristic.uuid == BleConstants.INDOOR_BIKE_DATA_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
                 ftmsControlPointChar?.let { cpChar ->
                     val cpDescriptor = cpChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-                    cpDescriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                    val written = gatt.writeDescriptor(cpDescriptor)
+                    val written = cpDescriptor?.let { d ->
+                        writeDescCompat(gatt, d, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)
+                    } ?: false
                     Timber.d("Writing FTMS Control Point indication descriptor: $written")
                 }
             }
@@ -1244,8 +1280,9 @@ class BleManager(private val context: Context) {
 
         gatt.setCharacteristicNotification(cscChar, true)
         val descriptor = cscChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
-        descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        val written = gatt.writeDescriptor(descriptor)
+        val written = descriptor?.let { d ->
+            writeDescCompat(gatt, d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        } ?: false
         Timber.i("Subscribed to CSC Measurement for cadence: written=$written")
     }
 
