@@ -1,46 +1,40 @@
 package com.cycling.workitout.data.strava
 
 import com.cycling.workitout.BuildConfig
+import com.cycling.workitout.data.network.core.NetworkModule
+import com.cycling.workitout.data.network.strava.StravaApi
+import com.cycling.workitout.data.network.strava.dto.StravaTokenResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
- * Thin REST wrapper around the bits of Strava's API we care about:
- *   - OAuth authorize URL builder   (Custom Tabs target)
- *   - authorization-code exchange   (one-shot, after the deep-link returns)
- *   - refresh-token flow            (silent, whenever [TokenStore.expiresAt] is stale)
- *   - uploads + polling             (the actual "push a .fit to Strava" call)
+ * Thin domain wrapper around [StravaApi]. Owns none of the HTTP plumbing —
+ * Retrofit + OkHttp live in the `data.network` package. This class just:
+ *   - builds the mobile OAuth authorize URL (pure string, no I/O)
+ *   - exchanges the authorization code for tokens and stashes them
+ *   - drives the upload + poll loop to turn a .fit into a Strava activity
  *
- * All network I/O runs on Dispatchers.IO. Callers see suspend functions that
- * throw on hard failure.
+ * Token refresh happens transparently in [com.cycling.workitout.data.network.strava.StravaAuthenticator]
+ * on 401s — this class never calls the refresh endpoint itself.
  */
-class StravaClient(private val tokens: StravaTokenStore) {
-
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS) // uploads can be chunky
-        .build()
-
-    private val json = Json { ignoreUnknownKeys = true }
+class StravaClient(
+    private val tokens: StravaTokenStore,
+    private val api: StravaApi = NetworkModule.createStravaApi(tokens)
+) {
 
     // ── OAuth ───────────────────────────────────────────────────────────
 
     /**
      * Build the mobile OAuth authorize URL. Strava's `/oauth/mobile/authorize`
-     * variant is the one that plays nicely with custom-scheme redirects; the
-     * web variant rejects non-http redirects in some flows.
+     * variant plays nicely with custom-scheme redirects; the web variant
+     * rejects non-http redirects in some flows.
      */
     fun buildAuthorizeUrl(): String {
         val clientId = BuildConfig.STRAVA_CLIENT_ID
@@ -54,50 +48,13 @@ class StravaClient(private val tokens: StravaTokenStore) {
 
     /** Exchange the authorization code we just got back via deep-link for tokens. */
     suspend fun exchangeCode(code: String): StravaTokenResponse = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("client_id", BuildConfig.STRAVA_CLIENT_ID)
-            .add("client_secret", BuildConfig.STRAVA_CLIENT_SECRET)
-            .add("code", code)
-            .add("grant_type", "authorization_code")
-            .build()
-        val resp = postForTokens(body)
+        val resp = api.exchangeAuthCode(
+            clientId = BuildConfig.STRAVA_CLIENT_ID,
+            clientSecret = BuildConfig.STRAVA_CLIENT_SECRET,
+            code = code
+        )
         saveTokens(resp)
         resp
-    }
-
-    /** Refresh if the access token is missing or within the 2-minute skew window. */
-    suspend fun ensureFreshToken(): String = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis() / 1000
-        val current = tokens.accessToken
-        if (!current.isNullOrBlank() && tokens.expiresAt - 120 > now) {
-            return@withContext current
-        }
-        val refresh = tokens.refreshToken
-            ?: throw IllegalStateException("Strava not connected — no refresh token")
-        Timber.d("Refreshing Strava access token")
-        val body = FormBody.Builder()
-            .add("client_id", BuildConfig.STRAVA_CLIENT_ID)
-            .add("client_secret", BuildConfig.STRAVA_CLIENT_SECRET)
-            .add("grant_type", "refresh_token")
-            .add("refresh_token", refresh)
-            .build()
-        val resp = postForTokens(body)
-        saveTokens(resp)
-        resp.accessToken
-    }
-
-    private fun postForTokens(body: okhttp3.RequestBody): StravaTokenResponse {
-        val req = Request.Builder()
-            .url("https://www.strava.com/oauth/token")
-            .post(body)
-            .build()
-        http.newCall(req).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw RuntimeException("Strava token endpoint ${response.code}: $text")
-            }
-            return json.decodeFromString(StravaTokenResponse.serializer(), text)
-        }
     }
 
     private fun saveTokens(resp: StravaTokenResponse) {
@@ -123,41 +80,28 @@ class StravaClient(private val tokens: StravaTokenStore) {
         name: String,
         description: String = "Recorded with WorkItOut"
     ): Long = withContext(Dispatchers.IO) {
-        val bearer = ensureFreshToken()
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("name", name)
-            .addFormDataPart("description", description)
-            .addFormDataPart("trainer", "1")
-            .addFormDataPart("commute", "0")
-            .addFormDataPart("data_type", "fit")
-            .addFormDataPart(
-                "file",
-                file.name,
-                file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
-            )
-            .build()
+        val textType = "text/plain".toMediaTypeOrNull()
+        val filePart = MultipartBody.Part.createFormData(
+            "file",
+            file.name,
+            file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+        )
 
-        val req = Request.Builder()
-            .url("https://www.strava.com/api/v3/uploads")
-            .header("Authorization", "Bearer $bearer")
-            .post(body)
-            .build()
-
-        val initial: StravaUploadResponse = http.newCall(req).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw RuntimeException("Strava upload ${response.code}: $text")
-            }
-            json.decodeFromString(StravaUploadResponse.serializer(), text)
-        }
+        val initial = api.uploadActivity(
+            name = name.toRequestBody(textType),
+            description = description.toRequestBody(textType),
+            trainer = "1".toRequestBody(textType),
+            commute = "0".toRequestBody(textType),
+            dataType = "fit".toRequestBody(textType),
+            file = filePart
+        )
         initial.error?.let { throw RuntimeException("Strava rejected upload: $it") }
 
         // Poll /uploads/{id} until Strava is done chewing on it.
         val uploadId = initial.id
         repeat(15) { attempt ->
             delay(2000)
-            val poll = pollUpload(uploadId, bearer)
+            val poll = api.pollUpload(uploadId)
             poll.error?.let { throw RuntimeException("Strava upload failed: $it") }
             if (poll.activityId != null && poll.activityId > 0) {
                 Timber.i("Strava upload complete → activity ${poll.activityId}")
@@ -166,21 +110,6 @@ class StravaClient(private val tokens: StravaTokenStore) {
             Timber.d("Strava upload pending (attempt ${attempt + 1}): ${poll.status}")
         }
         throw RuntimeException("Strava upload timed out after 30s")
-    }
-
-    private fun pollUpload(uploadId: Long, bearer: String): StravaUploadResponse {
-        val req = Request.Builder()
-            .url("https://www.strava.com/api/v3/uploads/$uploadId")
-            .header("Authorization", "Bearer $bearer")
-            .get()
-            .build()
-        http.newCall(req).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw RuntimeException("Strava poll ${response.code}: $text")
-            }
-            return json.decodeFromString(StravaUploadResponse.serializer(), text)
-        }
     }
 
     companion object {

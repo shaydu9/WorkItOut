@@ -1,11 +1,19 @@
-package com.cycling.workitout.data.strava
+package com.cycling.workitout.data.network.strava.dto
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Strava OAuth token response. Shape is identical for the authorization-code
- * exchange and the refresh-token flows — on refresh, `athlete` is omitted.
+ * Wire types for the Strava REST API.
+ *
+ * Same rule as Anthropic: these are internal to the network layer. The
+ * domain surface lives in `StravaRepository`'s public API (`UploadState`,
+ * etc.), which maps from these.
+ */
+
+/**
+ * Response from `POST /oauth/token` for either the authorization-code or
+ * refresh-token grant. On refresh the `athlete` object is omitted.
  */
 @Serializable
 data class StravaTokenResponse(
@@ -24,7 +32,12 @@ data class StravaAthlete(
     val lastname: String? = null
 )
 
-/** Response from POST /api/v3/uploads and subsequent GET /uploads/{id}. */
+/**
+ * Response from `POST /api/v3/uploads` and the subsequent `GET /api/v3/uploads/{id}`
+ * polling calls. Strava processes uploads asynchronously; you post the .fit,
+ * receive an upload id, and then poll until `activity_id` is populated or
+ * `error` is non-null.
+ */
 @Serializable
 data class StravaUploadResponse(
     val id: Long = 0,

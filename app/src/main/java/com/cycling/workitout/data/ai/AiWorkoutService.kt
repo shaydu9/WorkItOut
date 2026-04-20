@@ -3,39 +3,34 @@ package com.cycling.workitout.data.ai
 import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
+import com.cycling.workitout.data.network.anthropic.AnthropicApi
+import com.cycling.workitout.data.network.anthropic.dto.CacheControl
+import com.cycling.workitout.data.network.anthropic.dto.Message
+import com.cycling.workitout.data.network.anthropic.dto.MessagesRequest
+import com.cycling.workitout.data.network.anthropic.dto.SystemBlock
+import com.cycling.workitout.data.network.core.NetworkModule
 import com.cycling.workitout.ui.home.Difficulty
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /**
- * Calls the Anthropic Messages API to generate a structured cycling workout.
+ * Builds a structured cycling workout via the Anthropic Messages API.
+ *
+ * This is a thin domain layer: it constructs the prompt, calls [AnthropicApi]
+ * (which handles auth, retry, timeouts, JSON encoding via the network package),
+ * pulls the JSON block out of Claude's text response, validates it, and maps
+ * the result into a [WorkoutDefinition].
+ *
  * Two entry points:
  *  - [generateStructured] — duration + difficulty + FTP
  *  - [generateFromPrompt] — freeform user description
  */
-class AiWorkoutService {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+class AiWorkoutService(
+    private val anthropicApi: AnthropicApi = NetworkModule.anthropicApi
+) {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -101,20 +96,18 @@ class AiWorkoutService {
         return callApi(userMessage, ftp, expectedTotalSec = null)
     }
 
+    /**
+     * Call the LLM up to twice. First attempt uses the plain prompt; if the
+     * result fails hard validation (too few intervals, duration drift >10%),
+     * the second attempt tacks on an explicit "your last answer was invalid"
+     * nudge. Soft repairs (clamping out-of-range values, silent rescaling for
+     * drift ≤10%) happen silently with a Timber warning.
+     */
     private suspend fun callApi(
         userMessage: String,
         ftp: Int,
         expectedTotalSec: Int?
     ): WorkoutDefinition = withContext(Dispatchers.IO) {
-        val apiKey = readApiKey()
-        require(apiKey.isNotBlank() && !apiKey.contains("PASTE_YOUR_KEY")) {
-            "ANTHROPIC_API_KEY is not set in local.properties"
-        }
-
-        // Up to two tries: first attempt at the given prompt, second attempt tacks on
-        // an explicit "your last answer was invalid" nudge. Hard validation failures
-        // (too few intervals, drift >10%) trigger the retry; soft fixes (minor scale,
-        // per-interval clamp) happen silently with a Timber warning.
         var lastError: String? = null
         for (attempt in 1..2) {
             val messageForThisAttempt = if (attempt == 1) userMessage else buildString {
@@ -124,7 +117,7 @@ class AiWorkoutService {
                 append("\nReturn a corrected JSON object. The sum of durationSec MUST match the total.")
             }
 
-            val dto = requestDto(apiKey, messageForThisAttempt)
+            val dto = requestDto(messageForThisAttempt)
             if (dto == null) {
                 lastError = "response was not valid JSON"
             } else {
@@ -137,57 +130,37 @@ class AiWorkoutService {
         throw IllegalStateException("Claude returned an invalid workout twice: $lastError")
     }
 
-    private fun requestDto(apiKey: String, userMessage: String): AiWorkoutDto? {
-        val body = buildJsonObject {
-            put("model", "claude-sonnet-4-5")  // bump to claude-sonnet-4-6 once verified available
-            put("max_tokens", 2048)
-            putJsonArray("system") {
-                add(buildJsonObject {
-                    put("type", "text")
-                    put("text", systemPrompt)
-                    putJsonObject("cache_control") { put("type", "ephemeral") }
-                })
-            }
-            putJsonArray("messages") {
-                add(buildJsonObject {
-                    put("role", "user")
-                    put("content", userMessage)
-                })
-            }
-        }.toString()
+    /**
+     * One round-trip to the Messages API. Returns the parsed inner workout DTO,
+     * or null if Claude's response didn't contain a decodable JSON block.
+     * HTTP-level failures and retries are handled inside [AnthropicApi].
+     */
+    private suspend fun requestDto(userMessage: String): AiWorkoutDto? {
+        val request = MessagesRequest(
+            model = "claude-sonnet-4-5",
+            maxTokens = 2048,
+            system = listOf(
+                SystemBlock(
+                    text = systemPrompt,
+                    cacheControl = CacheControl()   // 5-minute prompt cache on the system block
+                )
+            ),
+            messages = listOf(Message(role = "user", content = userMessage))
+        )
 
-        val request = Request.Builder()
-            .url("https://api.anthropic.com/v1/messages")
-            .addHeader("x-api-key", apiKey)
-            .addHeader("anthropic-version", "2023-06-01")
-            .addHeader("content-type", "application/json")
-            .post(body.toRequestBody("application/json".toMediaType()))
-            .build()
+        val response = anthropicApi.createMessage(request)
+        val text = response.content.firstOrNull { it.type == "text" }?.text.orEmpty()
+        Timber.d("AI raw text: $text")
 
-        client.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                Timber.e("Anthropic API error ${response.code}: $responseBody")
-                throw IllegalStateException("Claude API ${response.code}: ${response.message}")
-            }
-            val text = extractText(responseBody)
-            Timber.d("AI raw text: $text")
-            val jsonText = extractJsonObject(text) ?: return null
-            Timber.d("AI workout JSON: $jsonText")
-            return try {
-                json.decodeFromString(AiWorkoutDto.serializer(), jsonText)
-            } catch (t: Throwable) {
-                Timber.w(t, "AI JSON failed to decode")
-                null
-            }
+        val jsonText = extractJsonObject(text) ?: return null
+        Timber.d("AI workout JSON: $jsonText")
+
+        return try {
+            json.decodeFromString(AiWorkoutDto.serializer(), jsonText)
+        } catch (t: Throwable) {
+            Timber.w(t, "AI JSON failed to decode")
+            null
         }
-    }
-
-    private fun extractText(responseBody: String): String {
-        val root = json.parseToJsonElement(responseBody) as JsonObject
-        val content = root["content"] as JsonArray
-        val first = content.first() as JsonObject
-        return (first["text"] as JsonPrimitive).content
     }
 
     /**
@@ -303,32 +276,6 @@ class AiWorkoutService {
         return BuildResult(workout, null)
     }
 
-    companion object {
-        internal const val MIN_TARGET_PCT = 0.30
-        internal const val MAX_TARGET_PCT = 1.70
-        internal const val MIN_INTERVAL_SEC = 10
-        internal const val MAX_INTERVAL_SEC = 3600
-        internal const val MIN_INTERVALS = 3
-        internal const val HARD_DRIFT_RATIO = 0.10   // >10% drift triggers a retry; anything smaller is silently rescaled
-    }
-
-    /**
-     * Read ANTHROPIC_API_KEY from BuildConfig via reflection.
-     * Reflection bypasses the Kotlin static-final-String inlining trap: the value
-     * read here is always whatever the freshly-generated BuildConfig.class holds,
-     * so changing local.properties + a normal incremental build picks it up
-     * without needing a clean.
-     */
-    private fun readApiKey(): String {
-        return try {
-            val cls = Class.forName("com.cycling.workitout.BuildConfig")
-            cls.getField("ANTHROPIC_API_KEY").get(null) as? String ?: ""
-        } catch (t: Throwable) {
-            Timber.e(t, "Failed to read ANTHROPIC_API_KEY from BuildConfig")
-            ""
-        }
-    }
-
     private fun parseZone(label: String): PowerZone {
         return when (label.trim().uppercase()) {
             "Z1" -> PowerZone.Z1_RECOVERY
@@ -339,5 +286,14 @@ class AiWorkoutService {
             "Z6" -> PowerZone.Z6_ANAEROBIC
             else -> PowerZone.Z2_ENDURANCE
         }
+    }
+
+    companion object {
+        internal const val MIN_TARGET_PCT = 0.30
+        internal const val MAX_TARGET_PCT = 1.70
+        internal const val MIN_INTERVAL_SEC = 10
+        internal const val MAX_INTERVAL_SEC = 3600
+        internal const val MIN_INTERVALS = 3
+        internal const val HARD_DRIFT_RATIO = 0.10
     }
 }
