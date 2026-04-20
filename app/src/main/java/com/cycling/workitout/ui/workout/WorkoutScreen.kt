@@ -32,6 +32,7 @@ fun WorkoutScreen(
     val metrics by viewModel.liveMetrics.collectAsStateWithLifecycle()
     val recordedData by viewModel.recordedData.collectAsStateWithLifecycle()
     val ergEnabled by viewModel.ergEnabled.collectAsStateWithLifecycle()
+    val startupState by viewModel.startupState.collectAsStateWithLifecycle()
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
     val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
     val stravaUploadState by viewModel.stravaUploadState.collectAsStateWithLifecycle()
@@ -146,6 +147,16 @@ fun WorkoutScreen(
             }
         }
 
+        // ═══════════════════════════════════════
+// Startup overlay — "Start pedaling" → 5..1 countdown.
+        // Covers the whole content area while visible; dismissed the moment
+        // the countdown hits 0 and WorkoutEngine.start() fires.
+        // ═══════════════════════════════════════
+        StartupOverlay(
+            state = startupState,
+            modifier = Modifier.padding(padding)
+        )
+
         if (showEndDialog) {
             AlertDialog(
                 onDismissRequest = { showEndDialog = false },
@@ -169,6 +180,66 @@ fun WorkoutScreen(
                     }
                 }
             )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Startup overlay — "Start pedaling" prompt + big 5..1 countdown
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun StartupOverlay(
+    state: WorkoutViewModel.StartupState,
+    modifier: Modifier = Modifier
+) {
+    if (state is WorkoutViewModel.StartupState.Idle) return
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.82f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            when (state) {
+                WorkoutViewModel.StartupState.Waiting -> {
+                    Text(
+                        text = "START PEDALING",
+                        color = Color.White,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Workout begins 5s after your first pedal stroke",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                is WorkoutViewModel.StartupState.Counting -> {
+                    Text(
+                        text = "${state.secondsLeft}",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 220.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "GET READY",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                WorkoutViewModel.StartupState.Idle -> Unit
+            }
         }
     }
 }

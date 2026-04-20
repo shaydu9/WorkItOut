@@ -22,8 +22,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -75,6 +77,31 @@ class WorkoutViewModel(
     // When OFF, the workout timer continues but no FTMS writes happen.
     private val _ergEnabled = MutableStateFlow(true)
     val ergEnabled: StateFlow<Boolean> = _ergEnabled.asStateFlow()
+
+    /**
+     * Pre-start UX: when the user taps Play we don't call WorkoutEngine.start() immediately.
+     * Instead we wait for the first pedal stroke, then run a 5s countdown. This gives the
+     * Tacx trainer time to fully latch ERG while the rider is already spinning up to tempo,
+     * avoiding the ~10s cold-start overshoot we used to see (raw power spiking to ~2× target
+     * for the first few seconds of recording).
+     *
+     * Rationale for 5s: FE-C burst ~3s to latch + rider spin-up 3-4s + reaction time.
+     * Matches the TrainerRoad convention, so users with muscle memory feel at home.
+     *
+     * Idle     → user hasn't pressed Play yet (or workout is already running/done)
+     * Waiting  → Play pressed, waiting for first non-zero cadence
+     * Counting → pedaling detected, counting down 5..1. If cadence drops to 0 we reset
+     *            back to Waiting (no point counting down if the rider stopped).
+     *
+     * Demo mode skips the entire flow — we don't have a real trainer to latch.
+     */
+    sealed class StartupState {
+        object Idle : StartupState()
+        object Waiting : StartupState()
+        data class Counting(val secondsLeft: Int) : StartupState()
+    }
+    private val _startupState = MutableStateFlow<StartupState>(StartupState.Idle)
+    val startupState: StateFlow<StartupState> = _startupState.asStateFlow()
 
     /** UI state for the post-workout .fit export. */
     sealed class ExportState {
@@ -164,7 +191,60 @@ class WorkoutViewModel(
         }
     }
 
-    fun startWorkout() = workoutEngine.start()
+    /**
+     * User tapped Play. In demo mode, start immediately. Otherwise run the pre-start
+     * flow: wait for first pedal stroke, then 5s countdown, then kick the engine.
+     * Re-entrant guard: if we're already in Waiting/Counting, ignore further presses.
+     */
+    fun startWorkout() {
+        if (_startupState.value != StartupState.Idle) return
+        if (bleManager.isDemoMode.value) {
+            workoutEngine.start()
+            return
+        }
+        viewModelScope.launch {
+            // Reopen the FE-C burst window so the trainer gets fresh Page 49 frames
+            // during the countdown — the pre-send from screen entry may have expired.
+            if (_ergEnabled.value) {
+                val firstTarget = workoutEngine.progress.value.targetPowerWatts
+                if (firstTarget > 0) {
+                    bleManager.setTargetPower(firstTarget)
+                    Timber.i("Startup: reopened burst for first target $firstTarget W")
+                }
+            }
+            runStartupCountdown()
+            _startupState.value = StartupState.Idle
+            workoutEngine.start()
+        }
+    }
+
+    /**
+     * Loop until we get a full uninterrupted 5-second countdown. If the rider stops
+     * pedaling mid-count (cadence → 0), reset to Waiting and try again.
+     */
+    private suspend fun runStartupCountdown() {
+        val cadenceFlow = bleManager.powerData.map { it.cadence }
+        while (true) {
+            _startupState.value = StartupState.Waiting
+            cadenceFlow.first { it > 0 }
+
+            var aborted = false
+            for (sec in 5 downTo 1) {
+                _startupState.value = StartupState.Counting(sec)
+                // Wait one second, but bail out early if cadence drops to 0.
+                val stopped = withTimeoutOrNull(1_000L) {
+                    cadenceFlow.first { it == 0 }
+                }
+                if (stopped != null) {
+                    Timber.i("Startup countdown aborted at $sec — rider stopped pedaling")
+                    aborted = true
+                    break
+                }
+            }
+            if (!aborted) return
+        }
+    }
+
     fun pauseWorkout() = workoutEngine.pause()
     fun resumeWorkout() = workoutEngine.resume()
     fun stopWorkout() = workoutEngine.stop()
