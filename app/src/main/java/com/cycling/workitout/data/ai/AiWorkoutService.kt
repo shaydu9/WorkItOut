@@ -137,7 +137,7 @@ class AiWorkoutService(
      */
     private suspend fun requestDto(userMessage: String): AiWorkoutDto? {
         val request = MessagesRequest(
-            model = "claude-sonnet-4-5",
+            model = "claude-sonnet-4-6",
             maxTokens = 2048,
             system = listOf(
                 SystemBlock(
