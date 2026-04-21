@@ -122,7 +122,7 @@ object FitFileWriter {
                     event = Event.LAP
                     eventType = EventType.STOP
                     sport = Sport.CYCLING
-                    subSport = SubSport.INDOOR_CYCLING
+                    subSport = SubSport.VIRTUAL_ACTIVITY
 
                     if (lapRecords.isNotEmpty()) {
                         val powers = lapRecords.map { it.actualPower }.filter { it > 0 }
@@ -170,7 +170,10 @@ object FitFileWriter {
                 totalElapsedTime = totalElapsed
                 totalTimerTime = totalElapsed
                 sport = Sport.CYCLING
-                subSport = SubSport.INDOOR_CYCLING
+                // VIRTUAL_ACTIVITY (58) is what Zwift writes; Strava reads this + trainer=1 and
+                // tags the upload as "Virtual Ride". INDOOR_CYCLING (6) — what TrainerRoad uses
+                // — gets tagged as the duller "Indoor Ride".
+                subSport = SubSport.VIRTUAL_ACTIVITY
                 event = Event.SESSION
                 eventType = EventType.STOP
                 firstLapIndex = 0
