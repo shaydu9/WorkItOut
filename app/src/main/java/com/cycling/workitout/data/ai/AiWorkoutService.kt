@@ -4,7 +4,6 @@ import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.data.network.anthropic.AnthropicApi
-import com.cycling.workitout.data.network.anthropic.dto.CacheControl
 import com.cycling.workitout.data.network.anthropic.dto.Message
 import com.cycling.workitout.data.network.anthropic.dto.MessagesRequest
 import com.cycling.workitout.data.network.anthropic.dto.SystemBlock
@@ -13,6 +12,7 @@ import com.cycling.workitout.ui.home.Difficulty
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import retrofit2.HttpException
 import timber.log.Timber
 import kotlin.math.roundToInt
 
@@ -141,14 +141,20 @@ class AiWorkoutService(
             maxTokens = 2048,
             system = listOf(
                 SystemBlock(
-                    text = systemPrompt,
-                    cacheControl = CacheControl()   // 5-minute prompt cache on the system block
+                    type = "text",
+                    text = systemPrompt
                 )
             ),
             messages = listOf(Message(role = "user", content = userMessage))
         )
 
-        val response = anthropicApi.createMessage(request)
+        val response = try {
+            anthropicApi.createMessage(request)
+        } catch (e: HttpException) {
+            val errorBody = runCatching { e.response()?.errorBody()?.string() }.getOrNull()
+            Timber.w(e, "Anthropic request failed: HTTP ${e.code()} body=$errorBody")
+            throw e
+        }
         val text = response.content.firstOrNull { it.type == "text" }?.text.orEmpty()
         Timber.d("AI raw text: $text")
 

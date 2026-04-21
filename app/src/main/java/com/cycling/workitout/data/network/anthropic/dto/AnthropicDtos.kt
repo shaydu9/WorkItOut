@@ -22,7 +22,7 @@ data class MessagesRequest(
 
 @Serializable
 data class SystemBlock(
-    val type: String = "text",
+    val type: String,
     val text: String,
     @SerialName("cache_control") val cacheControl: CacheControl? = null
 )
