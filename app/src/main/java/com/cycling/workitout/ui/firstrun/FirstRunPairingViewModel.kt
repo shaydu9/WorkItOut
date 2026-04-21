@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 enum class PairingStep {
     TRAINER,
     HEART_RATE,
-    FTP,
+    PROFILE,
     READY
 }
 
@@ -36,6 +36,12 @@ class FirstRunPairingViewModel(
 
     private val _ftp = MutableStateFlow(ThemePreferences.DEFAULT_FTP_WATTS)
     val ftp: StateFlow<Int> = _ftp.asStateFlow()
+
+    private val _weightKg = MutableStateFlow(ThemePreferences.DEFAULT_WEIGHT_KG)
+    val weightKg: StateFlow<Int> = _weightKg.asStateFlow()
+
+    private val _maxHeartRate = MutableStateFlow(ThemePreferences.DEFAULT_MAX_HR)
+    val maxHeartRate: StateFlow<Int> = _maxHeartRate.asStateFlow()
 
     val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -73,8 +79,8 @@ class FirstRunPairingViewModel(
     fun nextStep() {
         _step.value = when (_step.value) {
             PairingStep.TRAINER -> PairingStep.HEART_RATE
-            PairingStep.HEART_RATE -> PairingStep.FTP
-            PairingStep.FTP -> PairingStep.READY
+            PairingStep.HEART_RATE -> PairingStep.PROFILE
+            PairingStep.PROFILE -> PairingStep.READY
             PairingStep.READY -> PairingStep.READY
         }
     }
@@ -83,9 +89,19 @@ class FirstRunPairingViewModel(
         _ftp.value = watts.coerceIn(50, 600)
     }
 
+    fun setWeightKg(kg: Int) {
+        _weightKg.value = kg.coerceIn(30, 200)
+    }
+
+    fun setMaxHeartRate(bpm: Int) {
+        _maxHeartRate.value = bpm.coerceIn(120, 230)
+    }
+
     fun completeFirstRun(onDone: () -> Unit) {
         viewModelScope.launch {
             preferences.setUserFtpWatts(_ftp.value)
+            preferences.setUserWeightKg(_weightKg.value)
+            preferences.setUserMaxHeartRate(_maxHeartRate.value)
             preferences.setHasCompletedFirstRun(true)
             bleManager.stopScan()
             onDone()

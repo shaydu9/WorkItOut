@@ -28,6 +28,12 @@ class SettingsViewModel(
     val ftp: StateFlow<Int> = themePreferences.userFtpWatts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
 
+    val weightKg: StateFlow<Int> = themePreferences.userWeightKg
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_WEIGHT_KG)
+
+    val maxHeartRate: StateFlow<Int> = themePreferences.userMaxHeartRate
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_MAX_HR)
+
     val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
     val stravaAthleteName: StateFlow<String?> = stravaRepository.athleteName
 
@@ -56,6 +62,18 @@ class SettingsViewModel(
     fun setFtp(watts: Int) {
         viewModelScope.launch {
             themePreferences.setUserFtpWatts(watts)
+        }
+    }
+
+    fun setWeightKg(kg: Int) {
+        viewModelScope.launch {
+            themePreferences.setUserWeightKg(kg)
+        }
+    }
+
+    fun setMaxHeartRate(bpm: Int) {
+        viewModelScope.launch {
+            themePreferences.setUserMaxHeartRate(bpm)
         }
     }
 

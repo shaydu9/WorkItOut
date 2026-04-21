@@ -27,7 +27,11 @@ class ThemePreferences(private val context: Context) {
         private val POWER_SMOOTHING_SECONDS_KEY = intPreferencesKey("power_smoothing_seconds")
         private val HAS_COMPLETED_FIRST_RUN_KEY = booleanPreferencesKey("has_completed_first_run")
         private val USER_FTP_WATTS_KEY = intPreferencesKey("user_ftp_watts")
+        private val USER_WEIGHT_KG_KEY = intPreferencesKey("user_weight_kg")
+        private val USER_MAX_HR_KEY = intPreferencesKey("user_max_hr")
         const val DEFAULT_FTP_WATTS = 200
+        const val DEFAULT_WEIGHT_KG = 75
+        const val DEFAULT_MAX_HR = 190
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data
@@ -51,6 +55,16 @@ class ThemePreferences(private val context: Context) {
             preferences[USER_FTP_WATTS_KEY] ?: DEFAULT_FTP_WATTS
         }
 
+    val userWeightKg: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[USER_WEIGHT_KG_KEY] ?: DEFAULT_WEIGHT_KG
+        }
+
+    val userMaxHeartRate: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[USER_MAX_HR_KEY] ?: DEFAULT_MAX_HR
+        }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
@@ -72,6 +86,18 @@ class ThemePreferences(private val context: Context) {
     suspend fun setUserFtpWatts(watts: Int) {
         context.dataStore.edit { preferences ->
             preferences[USER_FTP_WATTS_KEY] = watts.coerceIn(50, 600)
+        }
+    }
+
+    suspend fun setUserWeightKg(kg: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[USER_WEIGHT_KG_KEY] = kg.coerceIn(30, 200)
+        }
+    }
+
+    suspend fun setUserMaxHeartRate(bpm: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[USER_MAX_HR_KEY] = bpm.coerceIn(120, 230)
         }
     }
 }

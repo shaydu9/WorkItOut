@@ -76,6 +76,8 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         intervalStartTotalSeconds = 0
         pausedElapsedSeconds = 0
         startTimeMillis = System.currentTimeMillis()
+        cumulativeDistanceMeters = 0.0
+        lastRecordedEpochMillis = 0L
         _recordedData.value = emptyList()
 
         val firstInterval = w.intervals.first()
@@ -117,10 +119,28 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     }
 
     /**
+     * Instantaneous virtual speed estimator. Set by the ViewModel once the
+     * user's weight is known. Left null for tests / headless paths.
+     */
+    var speedEstimator: VirtualSpeedEstimator? = null
+
+    /** Cumulative distance (meters) across this workout, incremented per recorded point. */
+    private var cumulativeDistanceMeters: Double = 0.0
+    private var lastRecordedEpochMillis: Long = 0L
+
+    /**
      * Record a data point from sensor data. Called by the ViewModel each time new data arrives.
      */
     fun recordDataPoint(power: Int, heartRate: Int, cadence: Int) {
         if (_progress.value.workoutState != WorkoutState.RUNNING) return
+
+        val now = System.currentTimeMillis()
+        val speedMps = speedEstimator?.speedMpsFor(power) ?: 0f
+        if (lastRecordedEpochMillis > 0L) {
+            val dtSec = (now - lastRecordedEpochMillis).coerceIn(0, 5_000) / 1000.0
+            cumulativeDistanceMeters += speedMps * dtSec
+        }
+        lastRecordedEpochMillis = now
 
         val point = RecordedDataPoint(
             timeSeconds = _progress.value.totalElapsedSeconds,
@@ -128,7 +148,9 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             targetPower = _progress.value.targetPowerWatts,
             heartRate = heartRate,
             cadence = cadence,
-            epochMillis = System.currentTimeMillis()
+            epochMillis = now,
+            speedMps = speedMps,
+            distanceMeters = cumulativeDistanceMeters.toFloat()
         )
 
         val current = _recordedData.value.toMutableList()

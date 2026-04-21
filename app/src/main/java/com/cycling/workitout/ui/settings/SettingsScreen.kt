@@ -27,11 +27,15 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val powerSmoothingSeconds by viewModel.powerSmoothingSeconds.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
+    val weightKg by viewModel.weightKg.collectAsStateWithLifecycle()
+    val maxHeartRate by viewModel.maxHeartRate.collectAsStateWithLifecycle()
     val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
     val stravaAthleteName by viewModel.stravaAthleteName.collectAsStateWithLifecycle()
     var showThemeDialog by remember { mutableStateOf(false) }
     var showPowerSmoothingDialog by remember { mutableStateOf(false) }
     var showFtpDialog by remember { mutableStateOf(false) }
+    var showWeightDialog by remember { mutableStateOf(false) }
+    var showMaxHrDialog by remember { mutableStateOf(false) }
     var showDisconnectStravaDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -63,6 +67,22 @@ fun SettingsScreen(
                     title = "FTP",
                     subtitle = "${ftp}W",
                     onClick = { showFtpDialog = true }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.MonitorWeight,
+                    title = "Weight",
+                    subtitle = "${weightKg} kg",
+                    onClick = { showWeightDialog = true }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Favorite,
+                    title = "Max Heart Rate",
+                    subtitle = "${maxHeartRate} bpm",
+                    onClick = { showMaxHrDialog = true }
                 )
             }
             item {
@@ -171,6 +191,36 @@ fun SettingsScreen(
                 onFtpSelected = { watts ->
                     viewModel.setFtp(watts)
                     showFtpDialog = false
+                }
+            )
+        }
+
+        if (showWeightDialog) {
+            NumericValueDialog(
+                title = "Body weight",
+                description = "Used with your power output to compute virtual speed and distance for Strava.",
+                currentValue = weightKg,
+                unit = "kg",
+                range = 30..200,
+                onDismiss = { showWeightDialog = false },
+                onValueSelected = { kg ->
+                    viewModel.setWeightKg(kg)
+                    showWeightDialog = false
+                }
+            )
+        }
+
+        if (showMaxHrDialog) {
+            NumericValueDialog(
+                title = "Max Heart Rate",
+                description = "Your maximum heart rate. Used to compute %HRmax training zones.",
+                currentValue = maxHeartRate,
+                unit = "bpm",
+                range = 120..230,
+                onDismiss = { showMaxHrDialog = false },
+                onValueSelected = { bpm ->
+                    viewModel.setMaxHeartRate(bpm)
+                    showMaxHrDialog = false
                 }
             )
         }
@@ -330,6 +380,56 @@ fun PowerSmoothingDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@Composable
+private fun NumericValueDialog(
+    title: String,
+    description: String,
+    currentValue: Int,
+    unit: String,
+    range: IntRange,
+    onDismiss: () -> Unit,
+    onValueSelected: (Int) -> Unit
+) {
+    var text by remember { mutableStateOf(currentValue.toString()) }
+    val parsed = text.toIntOrNull()
+    val valid = parsed != null && parsed in range
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.filter(Char::isDigit).take(3) },
+                    label = { Text("$title ($unit)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = {
+                        if (!valid) Text("Enter a value between ${range.first} and ${range.last}")
+                    },
+                    isError = !valid
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = { parsed?.let(onValueSelected) }
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

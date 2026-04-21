@@ -58,6 +58,8 @@ fun FirstRunPairingScreen(
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
+    val weightKg by viewModel.weightKg.collectAsStateWithLifecycle()
+    val maxHeartRate by viewModel.maxHeartRate.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var permissionDenied by remember { mutableStateOf(false) }
@@ -150,9 +152,13 @@ fun FirstRunPairingScreen(
                     allowSkip = true
                 )
 
-                PairingStep.FTP -> FtpStepContent(
+                PairingStep.PROFILE -> ProfileStepContent(
                     ftp = ftp,
+                    weightKg = weightKg,
+                    maxHeartRate = maxHeartRate,
                     onFtpChange = { viewModel.setFtp(it) },
+                    onWeightChange = { viewModel.setWeightKg(it) },
+                    onMaxHrChange = { viewModel.setMaxHeartRate(it) },
                     onNext = { viewModel.nextStep() }
                 )
 
@@ -169,7 +175,7 @@ private fun StepIndicator(currentStep: PairingStep) {
     val steps = listOf(
         "Trainer" to PairingStep.TRAINER,
         "HR" to PairingStep.HEART_RATE,
-        "FTP" to PairingStep.FTP,
+        "You" to PairingStep.PROFILE,
         "Done" to PairingStep.READY
     )
     Row(
@@ -292,40 +298,73 @@ private fun DeviceRow(device: BleDevice, onClick: () -> Unit) {
 }
 
 @Composable
-private fun FtpStepContent(
+private fun ProfileStepContent(
     ftp: Int,
+    weightKg: Int,
+    maxHeartRate: Int,
     onFtpChange: (Int) -> Unit,
+    onWeightChange: (Int) -> Unit,
+    onMaxHrChange: (Int) -> Unit,
     onNext: () -> Unit
 ) {
-    Text("What's your FTP?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Text("Tell us about you", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(4.dp))
     Text(
-        "Your Functional Threshold Power is used to scale AI-generated workouts. Don't know it? 200W is a reasonable starting point — you can change it later in Settings.",
+        "FTP scales AI-generated workouts. Weight powers Strava's virtual speed + distance. Max HR unlocks heart-rate training zones. You can edit these anytime in Settings.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Spacer(Modifier.height(24.dp))
 
-    var text by remember(ftp) { mutableStateOf(ftp.toString()) }
-    OutlinedTextField(
-        value = text,
-        onValueChange = { new ->
-            text = new.filter { it.isDigit() }.take(3)
-            text.toIntOrNull()?.let { onFtpChange(it) }
-        },
-        label = { Text("FTP (watts)") },
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth()
+    NumericField(
+        value = ftp,
+        label = "FTP (watts)",
+        onChange = onFtpChange,
+        maxDigits = 3
+    )
+    Spacer(Modifier.height(12.dp))
+    NumericField(
+        value = weightKg,
+        label = "Body weight (kg)",
+        onChange = onWeightChange,
+        maxDigits = 3
+    )
+    Spacer(Modifier.height(12.dp))
+    NumericField(
+        value = maxHeartRate,
+        label = "Max heart rate (bpm)",
+        onChange = onMaxHrChange,
+        maxDigits = 3
     )
 
     Spacer(Modifier.height(24.dp))
     Button(
         onClick = onNext,
-        enabled = ftp in 50..600,
+        enabled = ftp in 50..600 && weightKg in 30..200 && maxHeartRate in 120..230,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text("Continue")
     }
+}
+
+@Composable
+private fun NumericField(
+    value: Int,
+    label: String,
+    onChange: (Int) -> Unit,
+    maxDigits: Int
+) {
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { new ->
+            text = new.filter { it.isDigit() }.take(maxDigits)
+            text.toIntOrNull()?.let(onChange)
+        },
+        label = { Text(label) },
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

@@ -91,6 +91,8 @@ object FitFileWriter {
                     power = r.actualPower
                     heartRate = r.heartRate.toShort()
                     cadence = r.cadence.toShort()
+                    speed = r.speedMps
+                    distance = r.distanceMeters
                 }
                 encoder.write(rec)
             }
@@ -128,6 +130,7 @@ object FitFileWriter {
                         val powers = lapRecords.map { it.actualPower }.filter { it > 0 }
                         val hrs = lapRecords.map { it.heartRate }.filter { it > 0 }
                         val cads = lapRecords.map { it.cadence }.filter { it >= 0 }
+                        val speeds = lapRecords.map { it.speedMps }.filter { it > 0f }
                         if (powers.isNotEmpty()) {
                             avgPower = powers.average().toInt()
                             maxPower = powers.max()
@@ -140,6 +143,13 @@ object FitFileWriter {
                             avgCadence = cads.average().toInt().toShort()
                             maxCadence = cads.max().toShort()
                         }
+                        if (speeds.isNotEmpty()) {
+                            avgSpeed = speeds.average().toFloat()
+                            maxSpeed = speeds.max()
+                        }
+                        val lapStartDist = lapRecords.first().distanceMeters
+                        val lapEndDist = lapRecords.last().distanceMeters
+                        totalDistance = (lapEndDist - lapStartDist).coerceAtLeast(0f)
                     }
                 }
                 encoder.write(lap)
@@ -162,6 +172,8 @@ object FitFileWriter {
             val allPowers = sorted.map { it.actualPower }.filter { it > 0 }
             val allHrs = sorted.map { it.heartRate }.filter { it > 0 }
             val allCads = sorted.map { it.cadence }.filter { it >= 0 }
+            val allSpeeds = sorted.map { it.speedMps }.filter { it > 0f }
+            val sessionDistance = sorted.lastOrNull()?.distanceMeters ?: 0f
 
             val session = SessionMesg().apply {
                 messageIndex = 0
@@ -189,6 +201,11 @@ object FitFileWriter {
                 if (allCads.isNotEmpty()) {
                     avgCadence = allCads.average().toInt().toShort()
                 }
+                if (allSpeeds.isNotEmpty()) {
+                    avgSpeed = allSpeeds.average().toFloat()
+                    maxSpeed = allSpeeds.max()
+                }
+                totalDistance = sessionDistance
             }
             encoder.write(session)
 

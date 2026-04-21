@@ -86,5 +86,9 @@ data class RecordedDataPoint(
     val heartRate: Int,
     val cadence: Int,
     /** Wall-clock epoch millis when this point was recorded. Used by the .fit exporter. */
-    val epochMillis: Long = 0L
+    val epochMillis: Long = 0L,
+    /** Virtual speed derived from power + weight. */
+    val speedMps: Float = 0f,
+    /** Running cumulative distance at this point, in meters. */
+    val distanceMeters: Float = 0f
 )

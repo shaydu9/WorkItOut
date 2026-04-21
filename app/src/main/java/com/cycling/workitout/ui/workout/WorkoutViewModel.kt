@@ -12,8 +12,10 @@ import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.database.CompletedRideEntity
 import com.cycling.workitout.data.export.WorkoutExporter
+import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.WorkoutInterval
+import com.cycling.workitout.workout.VirtualSpeedEstimator
 import com.cycling.workitout.workout.WorkoutEngine
 import com.cycling.workitout.workout.WorkoutRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +39,8 @@ import kotlin.math.sqrt
 class WorkoutViewModel(
     private val bleManager: BleManager,
     workoutDefinition: WorkoutDefinition? = null,
-    private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository
+    private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository,
+    private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences
 ) : ViewModel() {
 
     private val workoutEngine = WorkoutEngine(viewModelScope)
@@ -122,6 +125,15 @@ class WorkoutViewModel(
 
         val workout = workoutDefinition ?: WorkoutRepository.getDemoWorkout()
         workoutEngine.loadWorkout(workout)
+
+        // Pull the user's body weight once and build the virtual-speed estimator.
+        // Speed + distance are written into the exported .fit file so Strava /
+        // Garmin show a realistic "Virtual Ride" with distance and avg speed;
+        // the live UI never surfaces them.
+        viewModelScope.launch {
+            val weight = themePreferences.userWeightKg.first()
+            workoutEngine.speedEstimator = VirtualSpeedEstimator(riderWeightKg = weight.toDouble())
+        }
 
         // Map to UI intervals for graphs
         workoutIntervals = workout.intervals.map {
