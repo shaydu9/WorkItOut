@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  */
 @Database(
     entities = [SavedDeviceEntity::class, CompletedRideEntity::class, SavedWorkoutEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class WorkItOutDatabase : RoomDatabase() {
@@ -110,6 +110,19 @@ abstract class WorkItOutDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7: track Strava upload per ride. Two new columns on completed_rides:
+         *   - stravaActivityId   — the activity ID Strava returned (null = never uploaded)
+         *   - stravaUploadedAtMillis — wall-clock timestamp of a successful upload
+         * Both nullable so existing rows survive untouched.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE completed_rides ADD COLUMN stravaActivityId INTEGER")
+                db.execSQL("ALTER TABLE completed_rides ADD COLUMN stravaUploadedAtMillis INTEGER")
+            }
+        }
+
         /** v5 → v6: add saved_workouts table for the workout library. */
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -134,7 +147,7 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                     WorkItOutDatabase::class.java,
                     "workitout_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     // IMPORTANT: do NOT add fallbackToDestructiveMigration() here.
                     // It silently wipes the user's ride history (completed_rides) on any
                     // schema bump without a matching migration. Every version jump must

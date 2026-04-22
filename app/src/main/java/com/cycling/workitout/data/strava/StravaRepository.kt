@@ -125,4 +125,17 @@ class StravaRepository(context: Context) {
     fun resetUploadState() {
         _uploadState.value = UploadState.Idle
     }
+
+    /**
+     * Upload a .fit and return the new Strava activity id. Throws on failure.
+     *
+     * This deliberately does NOT touch [uploadState] — that StateFlow is reserved
+     * for the live post-workout flow, which uses [uploadFit]. The history "sync
+     * past ride" feature owns its own per-ride state and just needs the activity
+     * id back so it can stamp the database row.
+     */
+    suspend fun uploadFitForHistory(file: File, workoutName: String): Long {
+        if (!tokens.hasTokens) throw IllegalStateException("Strava not connected")
+        return client.uploadFit(file, workoutName)
+    }
 }

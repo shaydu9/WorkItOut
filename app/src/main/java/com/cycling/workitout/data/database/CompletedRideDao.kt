@@ -21,4 +21,8 @@ interface CompletedRideDao {
 
     @Query("DELETE FROM completed_rides WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** Stamp a successful Strava upload onto a ride so we don't double-upload it. */
+    @Query("UPDATE completed_rides SET stravaActivityId = :activityId, stravaUploadedAtMillis = :uploadedAtMillis WHERE id = :rideId")
+    suspend fun markStravaUploaded(rideId: Long, activityId: Long, uploadedAtMillis: Long)
 }

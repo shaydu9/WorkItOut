@@ -51,5 +51,15 @@ data class CompletedRideEntity(
      * JSON-encoded list of recorded data points for the power/HR/cadence graph
      * on the detail screen.  Shape: `[{"t":0,"p":150,"tp":160,"hr":130,"c":85}, …]`
      */
-    val dataPointsJson: String
+    val dataPointsJson: String,
+
+    /**
+     * Strava activity id once this ride has been uploaded; null if it never has been.
+     * Used by the history detail screen to (a) suppress double-uploads and
+     * (b) deep-link to the activity on Strava.
+     */
+    val stravaActivityId: Long? = null,
+
+    /** Wall-clock epoch millis when the Strava upload succeeded; null if never uploaded. */
+    val stravaUploadedAtMillis: Long? = null
 )

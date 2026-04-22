@@ -1,5 +1,7 @@
 package com.cycling.workitout.ui.history
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -8,16 +10,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.cycling.workitout.data.database.CompletedRideEntity
+import com.cycling.workitout.data.strava.HistoryStravaUploader
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,6 +41,8 @@ fun RideDetailScreen(
 ) {
     val ride by viewModel.ride.collectAsStateWithLifecycle()
     val dataPoints by viewModel.dataPoints.collectAsStateWithLifecycle()
+    val uploadState by viewModel.uploadState.collectAsStateWithLifecycle()
+    val isStravaConnected by viewModel.isStravaConnected.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -68,6 +77,15 @@ fun RideDetailScreen(
             ) {
                 // Header
                 RideHeader(r)
+
+                // Strava sync — upload button or "already synced" badge
+                StravaSyncSection(
+                    ride = r,
+                    uploadState = uploadState,
+                    isStravaConnected = isStravaConnected,
+                    onUpload = viewModel::uploadToStrava,
+                    onClearError = viewModel::clearUploadError
+                )
 
                 // Power graph
                 if (dataPoints.isNotEmpty()) {
@@ -129,6 +147,96 @@ private fun RideHeader(ride: CompletedRideEntity) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun StravaSyncSection(
+    ride: CompletedRideEntity,
+    uploadState: HistoryStravaUploader.UploadState,
+    isStravaConnected: Boolean,
+    onUpload: () -> Unit,
+    onClearError: () -> Unit
+) {
+    val context = LocalContext.current
+    // The DB row is the source of truth — once stamped, the button is gone forever.
+    // (uploadState may also report Success transiently; treat both as "done".)
+    val persistedActivityId = ride.stravaActivityId
+    val transientActivityId = (uploadState as? HistoryStravaUploader.UploadState.Success)?.activityId
+    val activityId = persistedActivityId ?: transientActivityId
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = 1.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            when {
+                activityId != null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFFFC4C02), // Strava orange
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Synced to Strava",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://www.strava.com/activities/$activityId")
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        }) {
+                            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Open")
+                        }
+                    }
+                }
+                !isStravaConnected -> {
+                    Text(
+                        "Connect Strava in Settings to sync this ride.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                uploadState is HistoryStravaUploader.UploadState.Uploading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Uploading to Strava…", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                else -> {
+                    Column {
+                        Button(
+                            onClick = onUpload,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Upload to Strava")
+                        }
+                        if (uploadState is HistoryStravaUploader.UploadState.Failed) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Upload failed: ${uploadState.message}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            TextButton(onClick = onClearError) { Text("Dismiss") }
+                        }
+                    }
+                }
+            }
         }
     }
 }
