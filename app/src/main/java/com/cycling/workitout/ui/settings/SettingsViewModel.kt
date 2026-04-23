@@ -37,6 +37,15 @@ class SettingsViewModel(
     val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
     val stravaAthleteName: StateFlow<String?> = stravaRepository.athleteName
 
+    val autoUploadToStravaOnFinish: StateFlow<Boolean> = themePreferences.autoUploadToStravaOnFinish
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setAutoUploadToStravaOnFinish(enabled: Boolean) {
+        viewModelScope.launch {
+            themePreferences.setAutoUploadToStravaOnFinish(enabled)
+        }
+    }
+
     /** Launches Strava OAuth in a Custom Tab. The callback comes back through MainActivity. */
     fun connectStrava(context: Context) {
         stravaRepository.beginConnect(context)

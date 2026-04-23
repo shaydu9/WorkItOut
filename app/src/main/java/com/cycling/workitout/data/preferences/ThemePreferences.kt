@@ -29,6 +29,7 @@ class ThemePreferences(private val context: Context) {
         private val USER_FTP_WATTS_KEY = intPreferencesKey("user_ftp_watts")
         private val USER_WEIGHT_KG_KEY = intPreferencesKey("user_weight_kg")
         private val USER_MAX_HR_KEY = intPreferencesKey("user_max_hr")
+        private val AUTO_UPLOAD_TO_STRAVA_KEY = booleanPreferencesKey("auto_upload_to_strava_on_finish")
         const val DEFAULT_FTP_WATTS = 200
         const val DEFAULT_WEIGHT_KG = 75
         const val DEFAULT_MAX_HR = 190
@@ -65,6 +66,11 @@ class ThemePreferences(private val context: Context) {
             preferences[USER_MAX_HR_KEY] ?: DEFAULT_MAX_HR
         }
 
+    val autoUploadToStravaOnFinish: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[AUTO_UPLOAD_TO_STRAVA_KEY] ?: false
+        }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
@@ -98,6 +104,12 @@ class ThemePreferences(private val context: Context) {
     suspend fun setUserMaxHeartRate(bpm: Int) {
         context.dataStore.edit { preferences ->
             preferences[USER_MAX_HR_KEY] = bpm.coerceIn(120, 230)
+        }
+    }
+
+    suspend fun setAutoUploadToStravaOnFinish(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[AUTO_UPLOAD_TO_STRAVA_KEY] = enabled
         }
     }
 }

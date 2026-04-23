@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.WorkoutDefinition
@@ -116,6 +117,19 @@ fun WorkItOutNavigation(bleManager: BleManager) {
             val workout = WorkoutSession.pendingWorkout
             val viewModel = remember(workout) {
                 WorkoutViewModel(bleManager, workout)
+            }
+            // Once the ride has been persisted, jump straight to the same detail
+            // screen the user would see from History — that's the unified
+            // post-workout summary. Pop the live workout off the stack so Back
+            // from the detail goes Home, not back into a stopped workout.
+            val savedRideId by viewModel.savedRideId.collectAsStateWithLifecycle()
+            LaunchedEffect(savedRideId) {
+                savedRideId?.let { id ->
+                    WorkoutSession.pendingWorkout = null
+                    navController.navigate(Screen.RideDetail.withId(id)) {
+                        popUpTo(Screen.ActiveWorkout.route) { inclusive = true }
+                    }
+                }
             }
             WorkoutScreen(
                 viewModel = viewModel,

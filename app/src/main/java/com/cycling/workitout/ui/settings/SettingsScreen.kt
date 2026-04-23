@@ -31,6 +31,7 @@ fun SettingsScreen(
     val maxHeartRate by viewModel.maxHeartRate.collectAsStateWithLifecycle()
     val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
     val stravaAthleteName by viewModel.stravaAthleteName.collectAsStateWithLifecycle()
+    val autoUploadToStrava by viewModel.autoUploadToStravaOnFinish.collectAsStateWithLifecycle()
     var showThemeDialog by remember { mutableStateOf(false) }
     var showPowerSmoothingDialog by remember { mutableStateOf(false) }
     var showFtpDialog by remember { mutableStateOf(false) }
@@ -129,6 +130,18 @@ fun SettingsScreen(
                         else viewModel.connectStrava(context)
                     }
                 )
+            }
+            if (stravaConnected) {
+                item {
+                    SettingsToggleItem(
+                        icon = Icons.Default.CloudSync,
+                        title = "Auto-upload to Strava",
+                        subtitle = "Send rides to Strava as soon as you finish",
+                        iconTint = Color(0xFFFC4C02),
+                        checked = autoUploadToStrava,
+                        onCheckedChange = { viewModel.setAutoUploadToStravaOnFinish(it) }
+                    )
+                }
             }
 
             item {
@@ -303,6 +316,52 @@ fun SettingsItem(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsToggleItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    iconTint: Color? = null
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { onCheckedChange(!checked) }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint ?: MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
             )
         }
     }

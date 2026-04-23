@@ -119,6 +119,14 @@ class WorkoutViewModel(
     /** Tracks whether we've already persisted this ride so we don't double-save. */
     private var rideSaved = false
 
+    /**
+     * Row id of the just-saved ride. Non-null once [saveRideToHistory] has succeeded.
+     * The Compose layer observes this and navigates to the ride-detail screen so the
+     * user lands on the same screen they'd see from History — completing the loop.
+     */
+    private val _savedRideId = MutableStateFlow<Long?>(null)
+    val savedRideId: StateFlow<Long?> = _savedRideId.asStateFlow()
+
     init {
         // Fresh workout session — clear any stale upload result from the last run.
         stravaRepository.resetUploadState()
@@ -356,8 +364,21 @@ class WorkoutViewModel(
                     ftpWatts = ftp,
                     dataPointsJson = json
                 )
-                WorkItOutApplication.database.completedRideDao().insert(entity)
-                Timber.i("Ride saved to history: ${workout.name}")
+                val newId = WorkItOutApplication.database.completedRideDao().insert(entity)
+                _savedRideId.value = newId
+                Timber.i("Ride saved to history: ${workout.name} (id=$newId)")
+
+                // Optional auto-upload: if the user opted in and Strava is connected,
+                // hand the brand-new ride to the history uploader. We deliberately
+                // route through HistoryStravaUploader (not stravaRepository.uploadFit)
+                // so the ride row gets stamped with the activityId on success — that's
+                // what suppresses the manual "Upload to Strava" button on the ride
+                // detail screen we're about to navigate to.
+                val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
+                if (autoUpload && stravaRepository.isConnected.value) {
+                    Timber.i("Auto-upload enabled — kicking history upload for ride $newId")
+                    WorkItOutApplication.historyStravaUploader.upload(newId)
+                }
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to save ride to history")
             }
