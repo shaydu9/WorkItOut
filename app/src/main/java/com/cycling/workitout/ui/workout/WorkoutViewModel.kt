@@ -209,6 +209,22 @@ class WorkoutViewModel(
                 }
             }
         }
+
+        // ── Auto-arm the startup countdown on screen entry (non-demo) ──
+        // Historically the countdown only ran after the Play tap. In practice
+        // riders clip in, start pedaling, and expect the workout to begin —
+        // matches Zwift / TrainerRoad muscle memory. We move straight into
+        // Waiting so the "START PEDALING" overlay is the first thing users
+        // see; the first pedal stroke triggers the 5s countdown, which runs
+        // WorkoutEngine.start() at zero. The Play button still works (demo
+        // mode needs it), but it's redundant for a real ride.
+        if (!bleManager.isDemoMode.value) {
+            viewModelScope.launch {
+                runStartupCountdown()
+                _startupState.value = StartupState.Idle
+                workoutEngine.start()
+            }
+        }
     }
 
     /**
