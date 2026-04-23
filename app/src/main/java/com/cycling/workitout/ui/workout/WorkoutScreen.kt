@@ -228,7 +228,9 @@ private fun StartupOverlay(
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 220.sp,
                         fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     Text(
                         text = "GET READY",
@@ -349,38 +351,59 @@ private fun StatCell(
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp
     ) {
-        Column(
+        // BoxWithConstraints so the value text scales with the cell's actual
+        // height. On tall phones we hit the cap; on a Galaxy S9 or a split
+        // foldable the short "INTERVAL REMAINING" row used to clip the 40sp
+        // number — scaling prevents that without hand-tuning sizes per device.
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(Modifier.height(2.dp))
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.Center
+            // Reserve ~30% of the cell for the label + padding; the rest for
+            // the value glyph. Coerced to a sane min/max so it doesn't go tiny
+            // on huge-unit cells or explode on tablets.
+            val cellHeightValue = maxHeight.value
+            val cap = if (emphasized) 56f else 40f
+            val floor = if (emphasized) 22f else 16f
+            val valueSp = (cellHeightValue * 0.42f).coerceIn(floor, cap).sp
+            val unitSp = (cellHeightValue * 0.13f).coerceIn(10f, if (emphasized) 16f else 14f).sp
+
+            Column(
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = value,
-                    fontSize = if (emphasized) 56.sp else 40.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = color,
-                    textAlign = TextAlign.Center
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
                 )
-                if (unit.isNotEmpty()) {
+                Spacer(Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.Center
+                ) {
                     Text(
-                        text = " $unit",
-                        fontSize = if (emphasized) 16.sp else 14.sp,
-                        color = color.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(bottom = if (emphasized) 8.dp else 6.dp)
+                        text = value,
+                        fontSize = valueSp,
+                        fontWeight = FontWeight.Bold,
+                        color = color,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false
                     )
+                    if (unit.isNotEmpty()) {
+                        Text(
+                            text = " $unit",
+                            fontSize = unitSp,
+                            color = color.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            modifier = Modifier.padding(bottom = if (emphasized) 8.dp else 6.dp)
+                        )
+                    }
                 }
             }
         }
