@@ -392,7 +392,28 @@ class WorkoutViewModel(
                 // detail screen we're about to navigate to.
                 val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
                 if (autoUpload && stravaRepository.isConnected.value) {
-                    Timber.i("Auto-upload enabled — kicking history upload for ride $newId")
+                    // Wait for the silent .fit export to finish before handing
+                    // the ride to the uploader. saveRideToHistory() and
+                    // exportFitSilently() are fired back-to-back from
+                    // WorkoutScreen's LaunchedEffect(COMPLETED); without this
+                    // wait, OkHttp stats the still-growing .fit file, sends
+                    // Content-Length for the partial size, then streams more
+                    // bytes than it promised → ProtocolException: "expected
+                    // 4479 bytes but received 8192". 30s cap so we never
+                    // deadlock; if export fails, the uploader's own
+                    // regenerate-if-missing path covers us.
+                    Timber.i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
+                    val terminal = withTimeoutOrNull(30_000L) {
+                        exportState.first {
+                            it is ExportState.Ready || it is ExportState.Failed
+                        }
+                    }
+                    if (terminal is ExportState.Failed) {
+                        Timber.w("Silent export failed — auto-upload will regenerate the .fit")
+                    } else if (terminal == null) {
+                        Timber.w("Timed out waiting for .fit export; uploader will regenerate")
+                    }
+                    Timber.i("Kicking history upload for ride $newId")
                     WorkItOutApplication.historyStravaUploader.upload(newId)
                 }
             } catch (t: Throwable) {
