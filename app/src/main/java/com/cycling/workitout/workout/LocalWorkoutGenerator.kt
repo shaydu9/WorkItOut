@@ -20,10 +20,20 @@ object LocalWorkoutGenerator {
         val cooldown = (totalSec * 0.12).roundToInt().coerceAtLeast(180)
         val mainBlock = totalSec - warmup - cooldown
 
-        val pct = { p: Double -> max(40, (ftp * p).roundToInt()) }
+        // Build an interval from a canonical FTP percentage — we stamp both
+        // the percent (the source of truth) and a snapshot in watts at the
+        // user's current FTP for immediate consumption by the engine.
+        fun ival(duration: Int, percentFtp: Double, name: String, zone: PowerZone) =
+            WorkoutIntervalDef(
+                durationSeconds = duration,
+                targetPowerPercentFtp = percentFtp.toFloat(),
+                targetPowerWatts = max(40, (ftp * percentFtp).roundToInt()),
+                name = name,
+                zone = zone
+            )
 
         val intervals = mutableListOf<WorkoutIntervalDef>()
-        intervals += WorkoutIntervalDef(warmup, pct(0.55), "Warmup", PowerZone.Z2_ENDURANCE)
+        intervals += ival(warmup, 0.55, "Warmup", PowerZone.Z2_ENDURANCE)
 
         when (difficulty) {
             Difficulty.EASY -> {
@@ -31,11 +41,11 @@ object LocalWorkoutGenerator {
                 val surge = 120
                 val surgesTotal = surge * 2
                 val z2 = (mainBlock - surgesTotal) / 3
-                intervals += WorkoutIntervalDef(z2, pct(0.65), "Endurance 1", PowerZone.Z2_ENDURANCE)
-                intervals += WorkoutIntervalDef(surge, pct(0.85), "Tempo Surge 1", PowerZone.Z3_TEMPO)
-                intervals += WorkoutIntervalDef(z2, pct(0.65), "Endurance 2", PowerZone.Z2_ENDURANCE)
-                intervals += WorkoutIntervalDef(surge, pct(0.85), "Tempo Surge 2", PowerZone.Z3_TEMPO)
-                intervals += WorkoutIntervalDef(mainBlock - 2 * z2 - surgesTotal, pct(0.65), "Endurance 3", PowerZone.Z2_ENDURANCE)
+                intervals += ival(z2, 0.65, "Endurance 1", PowerZone.Z2_ENDURANCE)
+                intervals += ival(surge, 0.85, "Tempo Surge 1", PowerZone.Z3_TEMPO)
+                intervals += ival(z2, 0.65, "Endurance 2", PowerZone.Z2_ENDURANCE)
+                intervals += ival(surge, 0.85, "Tempo Surge 2", PowerZone.Z3_TEMPO)
+                intervals += ival(mainBlock - 2 * z2 - surgesTotal, 0.65, "Endurance 3", PowerZone.Z2_ENDURANCE)
             }
 
             Difficulty.MODERATE -> {
@@ -51,9 +61,9 @@ object LocalWorkoutGenerator {
                 val totalRecovery = recovery * (workCount - 1)
                 val workSec = (mainBlock - totalRecovery) / workCount
                 repeat(workCount) { i ->
-                    intervals += WorkoutIntervalDef(workSec, pct(0.90), "Sweet Spot ${i + 1}", PowerZone.Z4_THRESHOLD)
+                    intervals += ival(workSec, 0.90, "Sweet Spot ${i + 1}", PowerZone.Z4_THRESHOLD)
                     if (i < workCount - 1) {
-                        intervals += WorkoutIntervalDef(recovery, pct(0.50), "Recovery", PowerZone.Z1_RECOVERY)
+                        intervals += ival(recovery, 0.50, "Recovery", PowerZone.Z1_RECOVERY)
                     }
                 }
             }
@@ -71,9 +81,9 @@ object LocalWorkoutGenerator {
                 val totalRecovery = recovery * (workCount - 1)
                 val workSec = (mainBlock - totalRecovery) / workCount
                 repeat(workCount) { i ->
-                    intervals += WorkoutIntervalDef(workSec, pct(1.02), "Threshold ${i + 1}", PowerZone.Z4_THRESHOLD)
+                    intervals += ival(workSec, 1.02, "Threshold ${i + 1}", PowerZone.Z4_THRESHOLD)
                     if (i < workCount - 1) {
-                        intervals += WorkoutIntervalDef(recovery, pct(0.50), "Recovery", PowerZone.Z1_RECOVERY)
+                        intervals += ival(recovery, 0.50, "Recovery", PowerZone.Z1_RECOVERY)
                     }
                 }
             }
@@ -84,21 +94,21 @@ object LocalWorkoutGenerator {
                 val recovery = 180
                 val pairs = (mainBlock / (work + recovery)).coerceAtLeast(1)
                 repeat(pairs) { i ->
-                    intervals += WorkoutIntervalDef(work, pct(1.18), "VO2 #${i + 1}", PowerZone.Z5_VO2MAX)
+                    intervals += ival(work, 1.18, "VO2 #${i + 1}", PowerZone.Z5_VO2MAX)
                     if (i < pairs - 1) {
-                        intervals += WorkoutIntervalDef(recovery, pct(0.50), "Recovery", PowerZone.Z1_RECOVERY)
+                        intervals += ival(recovery, 0.50, "Recovery", PowerZone.Z1_RECOVERY)
                     }
                 }
                 // Pad any remaining seconds with recovery
                 val used = pairs * work + (pairs - 1) * recovery
                 val leftover = mainBlock - used
                 if (leftover > 30) {
-                    intervals += WorkoutIntervalDef(leftover, pct(0.55), "Spin", PowerZone.Z1_RECOVERY)
+                    intervals += ival(leftover, 0.55, "Spin", PowerZone.Z1_RECOVERY)
                 }
             }
         }
 
-        intervals += WorkoutIntervalDef(cooldown, pct(0.50), "Cooldown", PowerZone.Z1_RECOVERY)
+        intervals += ival(cooldown, 0.50, "Cooldown", PowerZone.Z1_RECOVERY)
 
         // Drop any zero/negative intervals from integer rounding
         val cleaned = intervals.filter { it.durationSeconds > 0 }
@@ -123,4 +133,16 @@ object LocalWorkoutGenerator {
             intervals = cleaned
         )
     }
+
+    /** The durations offered in the default starter library (also the Home quick-pick set). */
+    val DEFAULT_DURATIONS: List<Int> = listOf(30, 45, 60, 75, 90)
+
+    /**
+     * A 5×4 grid of starter workouts: every supported duration at every difficulty.
+     * Deterministic — same inputs, same output — so we don't need to persist these.
+     */
+    fun getDefaultLibrary(ftp: Int): List<WorkoutDefinition> =
+        DEFAULT_DURATIONS.flatMap { duration ->
+            Difficulty.values().map { difficulty -> generate(duration, difficulty, ftp) }
+        }
 }

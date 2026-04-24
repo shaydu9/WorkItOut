@@ -235,6 +235,7 @@ class AiWorkoutService(
 
             WorkoutIntervalDef(
                 durationSeconds = durClamped,
+                targetPowerPercentFtp = targetPctClamped.toFloat(),
                 targetPowerWatts = (targetPctClamped * ftp).roundToInt().coerceAtLeast(40),
                 name = i.name,
                 zone = parseZone(i.zone)

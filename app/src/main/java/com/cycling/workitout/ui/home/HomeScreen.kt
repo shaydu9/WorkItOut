@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
+import com.cycling.workitout.ui.library.WattsPercentToggle
+import com.cycling.workitout.ui.library.formatTarget
 import java.util.Locale
 
 private val DURATION_OPTIONS = listOf(30, 45, 60, 75, 90)
@@ -169,8 +171,11 @@ fun HomeScreen(
         }
 
         if (state.preview != null) {
+            val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
             WorkoutPreviewSheet(
                 workout = state.preview!!,
+                displayAsPercent = displayAsPercent,
+                onToggleDisplay = { viewModel.setDisplayAsPercent(it) },
                 onStart = {
                     val w = state.preview!!
                     viewModel.dismissPreview()
@@ -262,6 +267,8 @@ private fun CustomPromptDialog(
 @Composable
 private fun WorkoutPreviewSheet(
     workout: WorkoutDefinition,
+    displayAsPercent: Boolean,
+    onToggleDisplay: (Boolean) -> Unit,
     onStart: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (() -> Unit)? = null
@@ -287,7 +294,12 @@ private fun WorkoutPreviewSheet(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
+                WattsPercentToggle(
+                    asPercent = displayAsPercent,
+                    onChange = onToggleDisplay
+                )
                 if (onSave != null) {
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = {
                         onSave()
                         saved = true
@@ -321,7 +333,7 @@ private fun WorkoutPreviewSheet(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(workout.intervals) { interval ->
-                    IntervalRow(interval)
+                    IntervalRow(interval, displayAsPercent)
                 }
             }
 
@@ -347,7 +359,7 @@ private fun WorkoutPreviewSheet(
 }
 
 @Composable
-private fun IntervalRow(interval: WorkoutIntervalDef) {
+private fun IntervalRow(interval: WorkoutIntervalDef, displayAsPercent: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -380,7 +392,7 @@ private fun IntervalRow(interval: WorkoutIntervalDef) {
             modifier = Modifier.padding(end = 12.dp)
         )
         Text(
-            "${interval.targetPowerWatts}W",
+            formatTarget(interval, displayAsPercent),
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.bodyMedium
         )

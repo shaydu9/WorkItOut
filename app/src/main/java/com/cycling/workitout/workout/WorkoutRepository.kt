@@ -4,7 +4,27 @@ import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 
+/**
+ * Fallback demo workouts used when no workout is handed to the engine (e.g. demo mode).
+ * Percent-FTP values are canonical; watt snapshots assume a default 200W FTP and are
+ * overwritten by [com.cycling.workitout.data.withFtp] on real entry to the engine.
+ */
 object WorkoutRepository {
+
+    private const val DEFAULT_FTP = 200
+
+    private fun ival(
+        duration: Int,
+        percentFtp: Double,
+        name: String,
+        zone: PowerZone
+    ): WorkoutIntervalDef = WorkoutIntervalDef(
+        durationSeconds = duration,
+        targetPowerPercentFtp = percentFtp.toFloat(),
+        targetPowerWatts = (percentFtp * DEFAULT_FTP).toInt().coerceAtLeast(40),
+        name = name,
+        zone = zone
+    )
 
     fun getDemoWorkout(): WorkoutDefinition {
         return WorkoutDefinition(
@@ -12,12 +32,12 @@ object WorkoutRepository {
             name = "30-Min Sweet Spot",
             description = "Warmup, Sweet Spot intervals with recovery, Cooldown",
             intervals = listOf(
-                WorkoutIntervalDef(300, 150, "Warmup", PowerZone.Z2_ENDURANCE),
-                WorkoutIntervalDef(480, 250, "Sweet Spot 1", PowerZone.Z4_THRESHOLD),
-                WorkoutIntervalDef(120, 130, "Recovery", PowerZone.Z1_RECOVERY),
-                WorkoutIntervalDef(480, 260, "Sweet Spot 2", PowerZone.Z4_THRESHOLD),
-                WorkoutIntervalDef(120, 130, "Recovery", PowerZone.Z1_RECOVERY),
-                WorkoutIntervalDef(300, 120, "Cooldown", PowerZone.Z1_RECOVERY)
+                ival(300, 0.65, "Warmup", PowerZone.Z2_ENDURANCE),
+                ival(480, 0.90, "Sweet Spot 1", PowerZone.Z4_THRESHOLD),
+                ival(120, 0.55, "Recovery", PowerZone.Z1_RECOVERY),
+                ival(480, 0.92, "Sweet Spot 2", PowerZone.Z4_THRESHOLD),
+                ival(120, 0.55, "Recovery", PowerZone.Z1_RECOVERY),
+                ival(300, 0.50, "Cooldown", PowerZone.Z1_RECOVERY)
             )
         )
     }
@@ -30,13 +50,13 @@ object WorkoutRepository {
                 name = "20-Min FTP Test",
                 description = "Warmup, 20-minute all-out effort, Cooldown",
                 intervals = listOf(
-                    WorkoutIntervalDef(300, 130, "Warmup", PowerZone.Z2_ENDURANCE),
-                    WorkoutIntervalDef(60, 200, "Opener 1", PowerZone.Z3_TEMPO),
-                    WorkoutIntervalDef(60, 130, "Rest", PowerZone.Z1_RECOVERY),
-                    WorkoutIntervalDef(60, 250, "Opener 2", PowerZone.Z4_THRESHOLD),
-                    WorkoutIntervalDef(120, 130, "Rest", PowerZone.Z1_RECOVERY),
-                    WorkoutIntervalDef(1200, 270, "FTP Effort", PowerZone.Z4_THRESHOLD),
-                    WorkoutIntervalDef(300, 120, "Cooldown", PowerZone.Z1_RECOVERY)
+                    ival(300, 0.55, "Warmup", PowerZone.Z2_ENDURANCE),
+                    ival(60, 0.80, "Opener 1", PowerZone.Z3_TEMPO),
+                    ival(60, 0.50, "Rest", PowerZone.Z1_RECOVERY),
+                    ival(60, 1.00, "Opener 2", PowerZone.Z4_THRESHOLD),
+                    ival(120, 0.50, "Rest", PowerZone.Z1_RECOVERY),
+                    ival(1200, 1.05, "FTP Effort", PowerZone.Z4_THRESHOLD),
+                    ival(300, 0.50, "Cooldown", PowerZone.Z1_RECOVERY)
                 )
             ),
             WorkoutDefinition(
@@ -44,17 +64,17 @@ object WorkoutRepository {
                 name = "VO2max Intervals",
                 description = "5x3min VO2max efforts with recovery",
                 intervals = listOf(
-                    WorkoutIntervalDef(300, 150, "Warmup", PowerZone.Z2_ENDURANCE),
-                    WorkoutIntervalDef(180, 320, "VO2 #1", PowerZone.Z5_VO2MAX),
-                    WorkoutIntervalDef(180, 130, "Recovery", PowerZone.Z1_RECOVERY),
-                    WorkoutIntervalDef(180, 320, "VO2 #2", PowerZone.Z5_VO2MAX),
-                    WorkoutIntervalDef(180, 130, "Recovery", PowerZone.Z1_RECOVERY),
-                    WorkoutIntervalDef(180, 320, "VO2 #3", PowerZone.Z5_VO2MAX),
-                    WorkoutIntervalDef(180, 130, "Recovery", PowerZone.Z1_RECOVERY),
-                    WorkoutIntervalDef(180, 320, "VO2 #4", PowerZone.Z5_VO2MAX),
-                    WorkoutIntervalDef(180, 130, "Recovery", PowerZone.Z1_RECOVERY),
-                    WorkoutIntervalDef(180, 320, "VO2 #5", PowerZone.Z5_VO2MAX),
-                    WorkoutIntervalDef(300, 120, "Cooldown", PowerZone.Z1_RECOVERY)
+                    ival(300, 0.65, "Warmup", PowerZone.Z2_ENDURANCE),
+                    ival(180, 1.20, "VO2 #1", PowerZone.Z5_VO2MAX),
+                    ival(180, 0.50, "Recovery", PowerZone.Z1_RECOVERY),
+                    ival(180, 1.20, "VO2 #2", PowerZone.Z5_VO2MAX),
+                    ival(180, 0.50, "Recovery", PowerZone.Z1_RECOVERY),
+                    ival(180, 1.20, "VO2 #3", PowerZone.Z5_VO2MAX),
+                    ival(180, 0.50, "Recovery", PowerZone.Z1_RECOVERY),
+                    ival(180, 1.20, "VO2 #4", PowerZone.Z5_VO2MAX),
+                    ival(180, 0.50, "Recovery", PowerZone.Z1_RECOVERY),
+                    ival(180, 1.20, "VO2 #5", PowerZone.Z5_VO2MAX),
+                    ival(300, 0.50, "Cooldown", PowerZone.Z1_RECOVERY)
                 )
             )
         )

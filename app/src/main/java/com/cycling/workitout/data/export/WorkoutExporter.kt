@@ -83,6 +83,7 @@ object WorkoutExporter {
 
         val stubInterval = WorkoutIntervalDef(
             durationSeconds = ride.durationSeconds.coerceAtLeast(1),
+            targetPowerPercentFtp = 0.65f, // stub — history reconstruction doesn't need a canonical %
             targetPowerWatts = ride.avgPowerWatts,
             name = ride.name,
             zone = PowerZone.Z2_ENDURANCE

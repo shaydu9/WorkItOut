@@ -1,5 +1,7 @@
 package com.cycling.workitout.data
 
+import kotlin.math.roundToInt
+
 /**
  * Power zone classification based on Coggan standard zones
  */
@@ -31,6 +33,9 @@ enum class PowerZone(val label: String, val colorHex: Long) {
  */
 data class WorkoutIntervalDef(
     val durationSeconds: Int,
+    /** Canonical target as fraction of FTP (0.90 = 90% FTP). */
+    val targetPowerPercentFtp: Float,
+    /** Snapshot watts resolved at load time from the user's current FTP. */
     val targetPowerWatts: Int,
     val name: String,
     val zone: PowerZone
@@ -46,6 +51,16 @@ data class WorkoutDefinition(
     val intervals: List<WorkoutIntervalDef>,
     val totalDurationSeconds: Int = intervals.sumOf { it.durationSeconds }
 )
+
+/**
+ * Resolve every interval's [WorkoutIntervalDef.targetPowerWatts] from its canonical
+ * percent-FTP against the supplied FTP. Call this at load/handoff time so each
+ * workout shows the user's current FTP (not whatever FTP was stored when saved).
+ */
+fun WorkoutDefinition.withFtp(ftp: Int): WorkoutDefinition =
+    copy(intervals = intervals.map {
+        it.copy(targetPowerWatts = (it.targetPowerPercentFtp * ftp).roundToInt().coerceAtLeast(40))
+    })
 
 /**
  * Workout execution state

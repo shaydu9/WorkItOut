@@ -3,12 +3,13 @@ package com.cycling.workitout.ui.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,8 +20,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutDefinition
+import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.data.database.SavedWorkoutEntity
 import com.cycling.workitout.ui.home.toWorkoutDefinition
+import kotlin.math.roundToInt
+
+/**
+ * Render an interval's target as either watts (`"180 W"`) or a percent of FTP
+ * (`"90%"`), driven by the user's global display preference.
+ */
+internal fun formatTarget(interval: WorkoutIntervalDef, asPercent: Boolean): String =
+    if (asPercent) "${(interval.targetPowerPercentFtp * 100).roundToInt()}%"
+    else "${interval.targetPowerWatts} W"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,8 +42,14 @@ fun LibraryScreen(
 ) {
     val savedWorkouts by viewModel.savedWorkouts.collectAsStateWithLifecycle(initialValue = emptyList())
     val selectedWorkout by viewModel.selectedWorkout.collectAsStateWithLifecycle()
+    val defaultWorkouts by viewModel.defaultWorkouts.collectAsStateWithLifecycle()
+    val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
+    val currentFtp by viewModel.ftp.collectAsStateWithLifecycle()
 
     var deleteTarget by remember { mutableStateOf<SavedWorkoutEntity?>(null) }
+
+    // Saved workout_ids, so the heart button on starter cards reflects saved state.
+    val savedIds = remember(savedWorkouts) { savedWorkouts.map { it.workoutId }.toSet() }
 
     Scaffold(
         topBar = {
@@ -46,40 +63,66 @@ fun LibraryScreen(
             )
         }
     ) { padding ->
-        if (savedWorkouts.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "No saved workouts",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Generate a workout, then tap the heart icon to save it here",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
+            // ── Starter workouts ────────────────────────────────────────
+            if (defaultWorkouts.isNotEmpty()) {
+                item {
+                    SectionHeader("Starter workouts")
+                }
+
+                // Group by duration — one subheader + 4 cards per group.
+                val byDuration = defaultWorkouts.groupBy { it.totalDurationSeconds / 60 }
+                    .toSortedMap()
+
+                byDuration.forEach { (minutes, group) ->
+                    item {
+                        Text(
+                            "$minutes min",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                        )
+                    }
+                    items(group, key = { it.id }) { workout ->
+                        DefaultWorkoutCard(
+                            workout = workout,
+                            alreadySaved = workout.id in savedIds,
+                            onClick = { viewModel.selectDefaultWorkout(workout) },
+                            onSave = { viewModel.saveToLibrary(workout) }
+                        )
+                    }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
-            ) {
+
+            // ── Your library ────────────────────────────────────────────
+            item {
+                Spacer(Modifier.height(12.dp))
+                SectionHeader("Your library")
+            }
+
+            if (savedWorkouts.isEmpty()) {
+                item {
+                    Text(
+                        "Tap the heart on a starter above, or generate a workout from Home and save it here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+            } else {
                 items(savedWorkouts, key = { it.id }) { entity ->
                     SavedWorkoutCard(
                         entity = entity,
-                        onClick = { viewModel.selectWorkout(entity) },
+                        currentFtp = currentFtp,
+                        onClick = { viewModel.selectSavedWorkout(entity) },
                         onDelete = { deleteTarget = entity }
                     )
                 }
@@ -90,6 +133,8 @@ fun LibraryScreen(
         if (selectedWorkout != null) {
             LibraryPreviewSheet(
                 workout = selectedWorkout!!,
+                displayAsPercent = displayAsPercent,
+                onToggleDisplay = { viewModel.setDisplayAsPercent(it) },
                 onStart = {
                     val w = selectedWorkout!!
                     viewModel.dismissPreview()
@@ -122,14 +167,76 @@ fun LibraryScreen(
 }
 
 @Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun DefaultWorkoutCard(
+    workout: WorkoutDefinition,
+    alreadySaved: Boolean,
+    onClick: () -> Unit,
+    onSave: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    workout.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = onSave,
+                    enabled = !alreadySaved,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (alreadySaved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (alreadySaved) "Saved" else "Save to library",
+                        tint = if (alreadySaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            if (workout.description.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    workout.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            ZoneStrip(workout)
+        }
+    }
+}
+
+@Composable
 private fun SavedWorkoutCard(
     entity: SavedWorkoutEntity,
+    currentFtp: Int,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val totalMin = entity.totalDurationSeconds / 60
-    // Parse intervals for the zone summary strip
-    val workout = remember(entity.id) { entity.toWorkoutDefinition() }
+    // Parse intervals for the zone summary strip — re-resolve watts against current FTP.
+    val workout = remember(entity.id, currentFtp) { entity.toWorkoutDefinition(currentFtp) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -184,7 +291,6 @@ private fun SavedWorkoutCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Zone colour strip — a miniature visualization of the workout structure
             ZoneStrip(workout)
         }
     }
@@ -218,6 +324,8 @@ private fun ZoneStrip(workout: WorkoutDefinition) {
 @Composable
 private fun LibraryPreviewSheet(
     workout: WorkoutDefinition,
+    displayAsPercent: Boolean,
+    onToggleDisplay: (Boolean) -> Unit,
     onStart: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -229,11 +337,22 @@ private fun LibraryPreviewSheet(
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                workout.name,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    workout.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                WattsPercentToggle(
+                    asPercent = displayAsPercent,
+                    onChange = onToggleDisplay
+                )
+            }
 
             val totalMin = workout.totalDurationSeconds / 60
             Text(
@@ -291,7 +410,7 @@ private fun LibraryPreviewSheet(
                             modifier = Modifier.padding(end = 12.dp)
                         )
                         Text(
-                            "${interval.targetPowerWatts}W",
+                            formatTarget(interval, displayAsPercent),
                             fontWeight = FontWeight.SemiBold,
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -317,5 +436,28 @@ private fun LibraryPreviewSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * W | % segmented chip. Single source of truth for the display toggle — used on
+ * the library preview sheet, home preview sheet, and active workout screen.
+ */
+@Composable
+internal fun WattsPercentToggle(
+    asPercent: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    SingleChoiceSegmentedButtonRow {
+        SegmentedButton(
+            selected = !asPercent,
+            onClick = { onChange(false) },
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+        ) { Text("W") }
+        SegmentedButton(
+            selected = asPercent,
+            onClick = { onChange(true) },
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+        ) { Text("%") }
     }
 }

@@ -60,6 +60,14 @@ class HomeViewModel(
 
     val isDemoMode: StateFlow<Boolean> = bleManager.isDemoMode
 
+    /** Whether workout-target UI renders as percent of FTP vs. raw watts. */
+    val displayAsPercent: StateFlow<Boolean> = preferences.displayTargetsAsPercent
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setDisplayAsPercent(asPercent: Boolean) {
+        viewModelScope.launch { preferences.setDisplayTargetsAsPercent(asPercent) }
+    }
+
     fun setDuration(minutes: Int) {
         _uiState.value = _uiState.value.copy(durationMinutes = minutes)
     }
@@ -168,7 +176,13 @@ class HomeViewModel(
                 totalDurationSeconds = workout.totalDurationSeconds,
                 savedAtMillis = System.currentTimeMillis(),
                 intervalsJson = Json.encodeToString(workout.intervals.map {
-                    CompactInterval(it.durationSeconds, it.targetPowerWatts, it.name, it.zone.name)
+                    CompactInterval(
+                        d = it.durationSeconds,
+                        p = it.targetPowerWatts,
+                        n = it.name,
+                        z = it.zone.name,
+                        pp = it.targetPowerPercentFtp
+                    )
                 })
             )
             dao.insert(entity)
@@ -180,17 +194,26 @@ class HomeViewModel(
 /** Compact serializable interval for the JSON blob in saved_workouts. */
 @Serializable
 data class CompactInterval(
-    val d: Int,   // durationSeconds
-    val p: Int,   // targetPowerWatts
-    val n: String, // name
-    val z: String  // PowerZone enum name
+    val d: Int,            // durationSeconds
+    val p: Int,            // targetPowerWatts snapshot at save time
+    val n: String,         // name
+    val z: String,         // PowerZone enum name
+    val pp: Float? = null  // targetPowerPercentFtp — canonical since v2. Null on rows saved before the schema bump
 )
 
-/** Reconstruct a [WorkoutDefinition] from a [SavedWorkoutEntity]. */
-fun SavedWorkoutEntity.toWorkoutDefinition(): WorkoutDefinition {
+/**
+ * Reconstruct a [WorkoutDefinition] from a [SavedWorkoutEntity]. If the saved row
+ * carries a canonical percent-FTP value we use it; otherwise we back-fill from the
+ * snapshot watts using the user's current FTP (caller should then re-resolve with
+ * [com.cycling.workitout.data.withFtp] so watts reflect the *current* FTP).
+ */
+fun SavedWorkoutEntity.toWorkoutDefinition(currentFtp: Int): WorkoutDefinition {
     val intervals = Json.decodeFromString<List<CompactInterval>>(intervalsJson).map {
+        val pct = it.pp
+            ?: (if (currentFtp > 0) it.p.toFloat() / currentFtp.toFloat() else 0.65f)
         WorkoutIntervalDef(
             durationSeconds = it.d,
+            targetPowerPercentFtp = pct,
             targetPowerWatts = it.p,
             name = it.n,
             zone = PowerZone.valueOf(it.z)

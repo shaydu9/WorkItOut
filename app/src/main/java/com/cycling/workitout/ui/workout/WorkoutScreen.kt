@@ -32,6 +32,8 @@ fun WorkoutScreen(
     val metrics by viewModel.liveMetrics.collectAsStateWithLifecycle()
     val recordedData by viewModel.recordedData.collectAsStateWithLifecycle()
     val ergEnabled by viewModel.ergEnabled.collectAsStateWithLifecycle()
+    val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
+    val currentFtp by viewModel.currentFtp.collectAsStateWithLifecycle()
     val startupState by viewModel.startupState.collectAsStateWithLifecycle()
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
     val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
@@ -133,6 +135,8 @@ fun WorkoutScreen(
                     cadence = metrics.cadence,
                     heartRate = metrics.heartRate,
                     zoneColor = zoneColor,
+                    displayAsPercent = displayAsPercent,
+                    currentFtp = currentFtp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -142,7 +146,9 @@ fun WorkoutScreen(
 
                 ErgToggleRow(
                     ergEnabled = ergEnabled,
-                    onErgChange = viewModel::setErgEnabled
+                    onErgChange = viewModel::setErgEnabled,
+                    displayAsPercent = displayAsPercent,
+                    onDisplayChange = viewModel::setDisplayAsPercent
                 )
             }
         }
@@ -258,8 +264,22 @@ private fun StatsGrid(
     cadence: Int,
     heartRate: Int,
     zoneColor: Color,
+    displayAsPercent: Boolean,
+    currentFtp: Int,
     modifier: Modifier = Modifier
 ) {
+    // When the user has flipped the global display toggle to %-FTP, render
+    // power cells as "%" instead of "W". Target cell uses the interval's
+    // canonical percent via a simple round from watts/ftp (watts are a
+    // snapshot of that percent at the current FTP, so a round-trip through
+    // watts/ftp is exact).
+    val percentOf = { watts: Int ->
+        if (currentFtp <= 0) "--" else "${((watts.toDouble() / currentFtp) * 100).toInt()}"
+    }
+    val powerValueStr = if (displayAsPercent) percentOf(threeSecPower) else "$threeSecPower"
+    val powerUnitStr = if (displayAsPercent) "%" else "W"
+    val targetValueStr = if (displayAsPercent) percentOf(targetPower) else "$targetPower"
+    val targetUnitStr = if (displayAsPercent) "%" else "W"
     val powerColor = when {
         targetPower == 0 -> MaterialTheme.colorScheme.primary
         kotlin.math.abs(threeSecPower - targetPower) <= targetPower * 0.10 -> Color(0xFF4CAF50)
@@ -280,16 +300,16 @@ private fun StatsGrid(
         ) {
             StatCell(
                 label = "3s POWER",
-                value = "$threeSecPower",
-                unit = "W",
+                value = powerValueStr,
+                unit = powerUnitStr,
                 color = powerColor,
                 emphasized = true,
                 modifier = Modifier.weight(1f)
             )
             StatCell(
                 label = "TARGET",
-                value = "$targetPower",
-                unit = "W",
+                value = targetValueStr,
+                unit = targetUnitStr,
                 color = zoneColor,
                 modifier = Modifier.weight(1f)
             )
@@ -413,14 +433,16 @@ private fun StatCell(
 @Composable
 private fun ErgToggleRow(
     ergEnabled: Boolean,
-    onErgChange: (Boolean) -> Unit
+    onErgChange: (Boolean) -> Unit,
+    displayAsPercent: Boolean,
+    onDisplayChange: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "ERG MODE",
                 style = MaterialTheme.typography.labelMedium,
@@ -435,6 +457,11 @@ private fun ErgToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        com.cycling.workitout.ui.library.WattsPercentToggle(
+            asPercent = displayAsPercent,
+            onChange = onDisplayChange
+        )
+        Spacer(Modifier.width(12.dp))
         Switch(
             checked = ergEnabled,
             onCheckedChange = onErgChange

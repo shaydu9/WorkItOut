@@ -76,6 +76,18 @@ class WorkoutViewModel(
 
     val isDemoMode: StateFlow<Boolean> = bleManager.isDemoMode
 
+    // ── Display preference (W vs. % FTP) ──────────────────────────────
+    val displayAsPercent: StateFlow<Boolean> = themePreferences.displayTargetsAsPercent
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** User's current FTP — used to compute live power as a %-FTP on the active-workout UI. */
+    val currentFtp: StateFlow<Int> = themePreferences.userFtpWatts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
+
+    fun setDisplayAsPercent(asPercent: Boolean) {
+        viewModelScope.launch { themePreferences.setDisplayTargetsAsPercent(asPercent) }
+    }
+
     // ERG mode toggle — when ON, target power is pushed to the trainer on each interval change.
     // When OFF, the workout timer continues but no FTMS writes happen.
     private val _ergEnabled = MutableStateFlow(true)
