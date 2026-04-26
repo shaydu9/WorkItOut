@@ -22,27 +22,9 @@ import timber.log.Timber
 import java.io.File as JavaFile
 import java.util.Date
 
-/**
- * Writes a Garmin-compatible .fit activity file from a completed workout.
- *
- * The file layout follows Garmin's "Activity File" recipe:
- *
- *   FileId → DeviceInfo → Event(start) → [Record per second]* → [Lap per interval]*
- *                                                             → Event(stop) → Session → Activity
- *
- * Output is consumable by Strava, Garmin Connect, TrainingPeaks, etc.
- */
+// Builds a Garmin .fit activity file: FileId → DeviceInfo → Event(start) → Records → Laps → Session → Activity.
 object FitFileWriter {
 
-    /**
-     * Write a .fit file for the given completed workout.
-     *
-     * @param outputFile absolute path to write to
-     * @param workout the workout definition (intervals, name)
-     * @param startEpochMillis wall-clock start of the workout
-     * @param records per-second samples captured by [com.cycling.workitout.workout.WorkoutEngine]
-     * @return the written file, for callers to hand off to a share sheet or upload client
-     */
     fun write(
         outputFile: JavaFile,
         workout: WorkoutDefinition,
@@ -56,7 +38,6 @@ object FitFileWriter {
 
         val encoder = FileEncoder(outputFile, Fit.ProtocolVersion.V2_0)
         try {
-            // 1. File ID — required first message. Marks this as an ACTIVITY file.
             val fileId = FileIdMesg().apply {
                 type = FitFile.ACTIVITY
                 manufacturer = Manufacturer.DEVELOPMENT
@@ -66,7 +47,6 @@ object FitFileWriter {
             }
             encoder.write(fileId)
 
-            // 2. Device info — "WorkItOut" app as the data source.
             val deviceInfo = DeviceInfoMesg().apply {
                 timestamp = startTs
                 manufacturer = Manufacturer.DEVELOPMENT
@@ -75,7 +55,6 @@ object FitFileWriter {
             }
             encoder.write(deviceInfo)
 
-            // 3. Start event.
             val startEvent = EventMesg().apply {
                 timestamp = startTs
                 event = Event.TIMER
@@ -83,7 +62,6 @@ object FitFileWriter {
             }
             encoder.write(startEvent)
 
-            // 4. Record messages — one per sample. Sorted by epoch just in case.
             val sorted = records.sortedBy { it.epochMillis }
             for (r in sorted) {
                 val rec = RecordMesg().apply {
@@ -97,9 +75,7 @@ object FitFileWriter {
                 encoder.write(rec)
             }
 
-            // 5. Lap messages — one per workout interval.
-            // We translate interval time offsets into wall-clock, then compute per-lap stats
-            // from the records that fall inside each lap.
+            // One lap per workout interval, with per-lap stats from the records inside it.
             val lapEndEpochs = mutableListOf<Long>()
             var cumulativeSec = 0
             for ((idx, interval) in workout.intervals.withIndex()) {
@@ -160,7 +136,6 @@ object FitFileWriter {
             val endTs = DateTime(Date(endMillis))
             val totalElapsed = workout.totalDurationSeconds.toFloat()
 
-            // 6. Stop event.
             val stopEvent = EventMesg().apply {
                 timestamp = endTs
                 event = Event.TIMER
@@ -168,7 +143,6 @@ object FitFileWriter {
             }
             encoder.write(stopEvent)
 
-            // 7. Session — overall summary stats across the full activity.
             val allPowers = sorted.map { it.actualPower }.filter { it > 0 }
             val allHrs = sorted.map { it.heartRate }.filter { it > 0 }
             val allCads = sorted.map { it.cadence }.filter { it >= 0 }
@@ -182,9 +156,7 @@ object FitFileWriter {
                 totalElapsedTime = totalElapsed
                 totalTimerTime = totalElapsed
                 sport = Sport.CYCLING
-                // VIRTUAL_ACTIVITY (58) is what Zwift writes; Strava reads this + trainer=1 and
-                // tags the upload as "Virtual Ride". INDOOR_CYCLING (6) — what TrainerRoad uses
-                // — gets tagged as the duller "Indoor Ride".
+                // VIRTUAL_ACTIVITY + trainer=1 makes Strava tag this as "Virtual Ride" instead of "Indoor Ride".
                 subSport = SubSport.VIRTUAL_ACTIVITY
                 event = Event.SESSION
                 eventType = EventType.STOP
@@ -209,7 +181,6 @@ object FitFileWriter {
             }
             encoder.write(session)
 
-            // 8. Activity — outermost container.
             val activity = ActivityMesg().apply {
                 timestamp = endTs
                 totalTimerTime = totalElapsed
@@ -217,7 +188,7 @@ object FitFileWriter {
                 type = com.garmin.fit.Activity.MANUAL
                 event = Event.ACTIVITY
                 eventType = EventType.STOP
-                // Local timestamp is used by some importers to reconstruct the user's timezone.
+                // Local timestamp lets importers reconstruct the user's timezone.
                 val tzOffsetSec = java.util.TimeZone.getDefault().getOffset(endMillis) / 1000L
                 localTimestamp = endTs.timestamp + tzOffsetSec
             }

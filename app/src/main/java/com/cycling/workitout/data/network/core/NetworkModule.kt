@@ -15,27 +15,8 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
-/**
- * Singleton network graph. Holds one shared [OkHttpClient] (connection pool
- * reuse) + one converter factory, and exposes typed Retrofit APIs per
- * service.
- *
- * Pattern choices:
- *  - **Plain `object`, not Hilt.** Keeps the codebase framework-light for now;
- *    migration to Hilt later is a mechanical swap — every `@Provides` reads
- *    exactly the same bodies as the `by lazy` blocks below.
- *  - **Shared `OkHttpClient`.** Each [Retrofit] instance wraps a `.newBuilder()`
- *    copy so per-service interceptors (auth, logging overrides) don't leak
- *    across services. The underlying connection pool + dispatcher + cache is
- *    still shared.
- *  - **Factory for Strava, lazy for Anthropic.** Strava's auth interceptor
- *    needs a [StravaTokenStore] passed in by the repository, so it's built
- *    via [createStravaApi]. Anthropic reads its key from BuildConfig so there's
- *    nothing to inject — it's a plain `by lazy`.
- */
+// One shared OkHttpClient + one JSON converter; Retrofit instances are built per-service on top.
 object NetworkModule {
-
-    // ── Shared foundation ───────────────────────────────────────────────
 
     private val jsonConverter by lazy {
         NetworkJson.asConverterFactory("application/json".toMediaType())
@@ -52,11 +33,6 @@ object NetworkModule {
         }
     }
 
-    /**
-     * Shared client. Every service's Retrofit is built from a `.newBuilder()`
-     * copy of this, inheriting timeouts + retry + logging while layering its
-     * own auth on top.
-     */
     private val sharedClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
@@ -66,8 +42,6 @@ object NetworkModule {
             .addInterceptor(loggingInterceptor)
             .build()
     }
-
-    // ── Anthropic ───────────────────────────────────────────────────────
 
     val anthropicApi: AnthropicApi by lazy {
         val client = sharedClient.newBuilder()
@@ -82,11 +56,7 @@ object NetworkModule {
             .create(AnthropicApi::class.java)
     }
 
-    /**
-     * Read `ANTHROPIC_API_KEY` from BuildConfig via reflection so changes to
-     * `local.properties` + incremental builds are picked up without a clean —
-     * Kotlin's static-final-String inlining otherwise caches the stale value.
-     */
+    // Read via reflection so incremental builds pick up local.properties changes without a clean.
     private fun readAnthropicKey(): String = try {
         val cls = Class.forName("com.cycling.workitout.BuildConfig")
         cls.getField("ANTHROPIC_API_KEY").get(null) as? String ?: ""
@@ -95,17 +65,7 @@ object NetworkModule {
         ""
     }
 
-    // ── Strava ──────────────────────────────────────────────────────────
-
-    /**
-     * Build a [StravaApi] bound to a specific token store. Called once by
-     * [com.cycling.workitout.data.strava.StravaRepository] on construction.
-     *
-     * The Authenticator takes a `() -> StravaApi` provider rather than a
-     * direct reference because it needs to call the API instance it lives
-     * inside — the lambda breaks that cycle: we capture it before the API
-     * is constructed, and it's only invoked later, after init completes.
-     */
+    // Lambda breaks the circular dep: Authenticator needs the API, but API isn't built yet.
     fun createStravaApi(tokenStore: StravaTokenStore): StravaApi {
         lateinit var stravaApi: StravaApi
 

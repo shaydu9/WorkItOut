@@ -4,16 +4,7 @@ import com.cycling.workitout.data.strava.StravaTokenStore
 import okhttp3.Interceptor
 import okhttp3.Response
 
-/**
- * Adds `Authorization: Bearer <accessToken>` to every Strava API request,
- * except OAuth endpoints which authenticate via form-body client credentials.
- *
- * When the access token is blank (user not connected yet), the header is
- * omitted — the server returns 401 and the caller surfaces "not connected."
- *
- * Token freshness is **not** this class's concern. Expired tokens trigger a
- * 401, which [StravaAuthenticator] catches and handles transparently.
- */
+// Attaches Bearer token to every Strava request; skips OAuth endpoints and blank tokens.
 class StravaAuthInterceptor(
     private val tokenStore: StravaTokenStore
 ) : Interceptor {

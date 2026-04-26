@@ -12,23 +12,8 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Path
 
-/**
- * Retrofit interface for the Strava REST API.
- *
- * Base URL: `https://www.strava.com/` — OAuth endpoints and versioned API
- * endpoints share a host, just different path prefixes (`oauth/` vs `api/v3/`).
- *
- * Auth:
- *  - `/oauth/token` is **unauthenticated** — callers present client credentials
- *    in the form body. [StravaAuthInterceptor] skips it; [StravaAuthenticator]
- *    skips it too (no point trying to refresh the thing that does the refreshing).
- *  - `/api/v3/...` requires `Authorization: Bearer <token>` — handled by
- *    [StravaAuthInterceptor]; if the access token has expired, [StravaAuthenticator]
- *    transparently refreshes and retries.
- */
 interface StravaApi {
 
-    /** Authorization-code grant — runs once, when the user returns from Custom Tabs. */
     @FormUrlEncoded
     @POST("oauth/token")
     suspend fun exchangeAuthCode(
@@ -38,7 +23,6 @@ interface StravaApi {
         @Field("grant_type") grantType: String = "authorization_code"
     ): StravaTokenResponse
 
-    /** Refresh-token grant — called by [StravaAuthenticator] on 401. */
     @FormUrlEncoded
     @POST("oauth/token")
     suspend fun refreshAccessToken(
@@ -48,11 +32,7 @@ interface StravaApi {
         @Field("grant_type") grantType: String = "refresh_token"
     ): StravaTokenResponse
 
-    /**
-     * Upload a .fit file. Returns an upload record with an id; Strava processes
-     * the file asynchronously — callers poll [pollUpload] until `activityId`
-     * is non-null or `error` is populated.
-     */
+    // Strava processes async — poll until activityId is non-null or error is set.
     @Multipart
     @POST("api/v3/uploads")
     suspend fun uploadActivity(

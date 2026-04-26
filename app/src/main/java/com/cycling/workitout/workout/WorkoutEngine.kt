@@ -13,10 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
-/**
- * Core workout state machine that drives a structured workout.
- * Separated from ViewModel and BLE for testability.
- */
 class WorkoutEngine(private val coroutineScope: CoroutineScope) {
 
     private val _progress = MutableStateFlow(WorkoutProgress())
@@ -95,7 +91,6 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         tickJob?.cancel()
         tickJob = null
 
-        // Save elapsed time so we can resume from this point
         pausedElapsedSeconds = _progress.value.totalElapsedSeconds
 
         _progress.value = _progress.value.copy(workoutState = WorkoutState.PAUSED)
@@ -118,19 +113,13 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         onWorkoutStopped?.invoke()
     }
 
-    /**
-     * Instantaneous virtual speed estimator. Set by the ViewModel once the
-     * user's weight is known. Left null for tests / headless paths.
-     */
+    // Set by the ViewModel once the user's weight is loaded; null in tests.
     var speedEstimator: VirtualSpeedEstimator? = null
 
     /** Cumulative distance (meters) across this workout, incremented per recorded point. */
     private var cumulativeDistanceMeters: Double = 0.0
     private var lastRecordedEpochMillis: Long = 0L
 
-    /**
-     * Record a data point from sensor data. Called by the ViewModel each time new data arrives.
-     */
     fun recordDataPoint(power: Int, heartRate: Int, cadence: Int) {
         if (_progress.value.workoutState != WorkoutState.RUNNING) return
 
@@ -172,10 +161,8 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     private fun tick() {
         val w = workout ?: return
 
-        // Use wall-clock time for accuracy
         val totalElapsed = ((System.currentTimeMillis() - startTimeMillis) / 1000).toInt()
 
-        // Check if workout is done
         if (totalElapsed >= w.totalDurationSeconds) {
             tickJob?.cancel()
             tickJob = null
@@ -190,7 +177,6 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             return
         }
 
-        // Find current interval based on total elapsed time
         var cumulative = 0
         var newIntervalIndex = 0
         for ((index, interval) in w.intervals.withIndex()) {
@@ -204,7 +190,6 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             }
         }
 
-        // Interval changed
         if (newIntervalIndex != currentIntervalIndex) {
             currentIntervalIndex = newIntervalIndex
             intervalStartTotalSeconds = cumulative
@@ -221,7 +206,6 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         val w = workout ?: return
         val interval = w.intervals.getOrNull(currentIntervalIndex) ?: return
 
-        // Calculate cumulative seconds up to current interval
         var cumulative = 0
         for (i in 0 until currentIntervalIndex) {
             cumulative += w.intervals[i].durationSeconds

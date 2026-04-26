@@ -7,13 +7,6 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-/**
- * Main Room database for WorkItOut app.
- *
- * v4 dropped the profiles/equipment_profiles tables — the app no longer
- * has the profile concept. Saved devices are kept so paired trainer + HR
- * auto-reconnect on startup.
- */
 @Database(
     entities = [SavedDeviceEntity::class, CompletedRideEntity::class, SavedWorkoutEntity::class],
     version = 7,
@@ -29,14 +22,12 @@ abstract class WorkItOutDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: WorkItOutDatabase? = null
 
-        /** v1 → v2: add displayOrder to equipment_profiles. */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE equipment_profiles ADD COLUMN displayOrder INTEGER NOT NULL DEFAULT 0")
             }
         }
 
-        /** v2 → v3: split profileId off of saved_devices into a junction table. */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""

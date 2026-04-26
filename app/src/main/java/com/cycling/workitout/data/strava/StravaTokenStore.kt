@@ -6,15 +6,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import timber.log.Timber
 
-/**
- * Strava OAuth tokens live here. Backed by [EncryptedSharedPreferences] so the
- * refresh token isn't sitting in plain preferences. We keep:
- *  - accessToken    — short-lived bearer (6 hours)
- *  - refreshToken   — long-lived; used to mint new access tokens silently
- *  - expiresAt      — epoch seconds when the current access token goes stale
- *  - athleteId      — numeric Strava id (handy for logs)
- *  - athleteName    — "First Last", cached so UI can show "Connected as …"
- */
+// Strava OAuth tokens in EncryptedSharedPreferences so the refresh token isn't plain text.
 class StravaTokenStore(context: Context) {
 
     private val prefs: SharedPreferences = try {
@@ -43,7 +35,6 @@ class StravaTokenStore(context: Context) {
         get() = prefs.getString(KEY_REFRESH, null)
         set(v) { prefs.edit().putString(KEY_REFRESH, v).apply() }
 
-    /** Epoch *seconds* (not millis) — matches Strava's `expires_at` field. */
     var expiresAt: Long
         get() = prefs.getLong(KEY_EXPIRES, 0L)
         set(v) { prefs.edit().putLong(KEY_EXPIRES, v).apply() }

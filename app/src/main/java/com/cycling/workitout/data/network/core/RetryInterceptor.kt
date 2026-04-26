@@ -7,30 +7,7 @@ import java.io.IOException
 import kotlin.math.min
 import kotlin.random.Random
 
-/**
- * Transparent retry with exponential backoff. Applied once, at the shared
- * OkHttpClient layer, so every Retrofit service inherits it for free.
- *
- * **Retry triggers**
- *  - HTTP 408 (Request Timeout), 429 (Too Many Requests), 5xx (server error).
- *  - [IOException] — network/DNS blip, socket timeout, connection reset.
- *
- * **Not retried — fail fast**
- *  - Other 4xx (400/401/403/404): bad request, bad auth, missing resource.
- *    Retrying won't change the outcome; the caller should see the error.
- *
- * **Backoff**
- *  - `500ms << attempt` + jitter(0–400ms), capped at [MAX_BACKOFF_MS].
- *  - On 429, prefers a server-supplied `Retry-After` header when present.
- *
- * **Caller responsibility**
- *  Non-idempotent mutations (e.g. POSTs that create entities) pass through
- *  here too. In practice Anthropic's `/v1/messages` is idempotent-ish
- *  (worst case: duplicate tokens billed) and Strava's upload endpoint
- *  dedups by file content, so we keep this simple. If a future endpoint
- *  must never retry, attach `@Header("X-No-Retry")` and this interceptor
- *  can be taught to honor it.
- */
+// Exponential backoff for 408/429/5xx and IOExceptions; honors Retry-After on 429.
 class RetryInterceptor(
     private val maxAttempts: Int = DEFAULT_MAX_ATTEMPTS
 ) : Interceptor {

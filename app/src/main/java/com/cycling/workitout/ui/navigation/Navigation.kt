@@ -42,10 +42,7 @@ sealed class Screen(val route: String) {
     }
 }
 
-/**
- * In-memory handoff of the generated workout from Home → ActiveWorkout.
- * Avoids serializing the full WorkoutDefinition through nav arguments.
- */
+// In-memory handoff to avoid serializing the full WorkoutDefinition through nav args.
 object WorkoutSession {
     var pendingWorkout: WorkoutDefinition? = null
 }
@@ -55,7 +52,6 @@ fun WorkItOutNavigation(bleManager: BleManager) {
     val navController = rememberNavController()
     val prefs = WorkItOutApplication.themePreferences
 
-    // Determine start destination once, based on first-run flag.
     var startDestination by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val completed = prefs.hasCompletedFirstRun.first()
@@ -64,7 +60,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
 
     val resolvedStart = startDestination
     if (resolvedStart == null) {
-        // Brief splash while we read DataStore
+        // Spinner while DataStore resolves the first-run flag.
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -118,10 +114,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
             val viewModel = remember(workout) {
                 WorkoutViewModel(bleManager, workout)
             }
-            // Once the ride has been persisted, jump straight to the same detail
-            // screen the user would see from History — that's the unified
-            // post-workout summary. Pop the live workout off the stack so Back
-            // from the detail goes Home, not back into a stopped workout.
+            // Navigate to ride detail once saved; pop workout so Back goes Home, not back into a stopped workout.
             val savedRideId by viewModel.savedRideId.collectAsStateWithLifecycle()
             LaunchedEffect(savedRideId) {
                 savedRideId?.let { id ->

@@ -14,28 +14,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.io.File
 
-/**
- * Thin domain wrapper around [StravaApi]. Owns none of the HTTP plumbing —
- * Retrofit + OkHttp live in the `data.network` package. This class just:
- *   - builds the mobile OAuth authorize URL (pure string, no I/O)
- *   - exchanges the authorization code for tokens and stashes them
- *   - drives the upload + poll loop to turn a .fit into a Strava activity
- *
- * Token refresh happens transparently in [com.cycling.workitout.data.network.strava.StravaAuthenticator]
- * on 401s — this class never calls the refresh endpoint itself.
- */
+// Handles OAuth code exchange, token storage, and the upload+poll loop for .fit files.
 class StravaClient(
     private val tokens: StravaTokenStore,
     private val api: StravaApi = NetworkModule.createStravaApi(tokens)
 ) {
 
-    // ── OAuth ───────────────────────────────────────────────────────────
-
-    /**
-     * Build the mobile OAuth authorize URL. Strava's `/oauth/mobile/authorize`
-     * variant plays nicely with custom-scheme redirects; the web variant
-     * rejects non-http redirects in some flows.
-     */
+    // /oauth/mobile/authorize is used because the web variant rejects non-http redirects.
     fun buildAuthorizeUrl(): String {
         val clientId = BuildConfig.STRAVA_CLIENT_ID
         return "https://www.strava.com/oauth/mobile/authorize" +
@@ -46,7 +31,6 @@ class StravaClient(
                 "&scope=activity:write,read"
     }
 
-    /** Exchange the authorization code we just got back via deep-link for tokens. */
     suspend fun exchangeCode(code: String): StravaTokenResponse = withContext(Dispatchers.IO) {
         val resp = api.exchangeAuthCode(
             clientId = BuildConfig.STRAVA_CLIENT_ID,
@@ -69,12 +53,6 @@ class StravaClient(
         }
     }
 
-    // ── Uploads ─────────────────────────────────────────────────────────
-
-    /**
-     * Upload a .fit file and poll until Strava finishes processing it.
-     * Returns the new activity id on success, throws on failure.
-     */
     suspend fun uploadFit(
         file: File,
         name: String,

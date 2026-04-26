@@ -2,9 +2,6 @@ package com.cycling.workitout.data
 
 import android.bluetooth.BluetoothDevice
 
-/**
- * Represents a discovered BLE device
- */
 data class BleDevice(
     val device: BluetoothDevice,
     val name: String,

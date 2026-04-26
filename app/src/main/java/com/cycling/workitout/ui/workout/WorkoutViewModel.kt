@@ -93,23 +93,7 @@ class WorkoutViewModel(
     private val _ergEnabled = MutableStateFlow(true)
     val ergEnabled: StateFlow<Boolean> = _ergEnabled.asStateFlow()
 
-    /**
-     * Pre-start UX: when the user taps Play we don't call WorkoutEngine.start() immediately.
-     * Instead we wait for the first pedal stroke, then run a 5s countdown. This gives the
-     * Tacx trainer time to fully latch ERG while the rider is already spinning up to tempo,
-     * avoiding the ~10s cold-start overshoot we used to see (raw power spiking to ~2× target
-     * for the first few seconds of recording).
-     *
-     * Rationale for 5s: FE-C burst ~3s to latch + rider spin-up 3-4s + reaction time.
-     * Matches the TrainerRoad convention, so users with muscle memory feel at home.
-     *
-     * Idle     → user hasn't pressed Play yet (or workout is already running/done)
-     * Waiting  → Play pressed, waiting for first non-zero cadence
-     * Counting → pedaling detected, counting down 5..1. If cadence drops to 0 we reset
-     *            back to Waiting (no point counting down if the rider stopped).
-     *
-     * Demo mode skips the entire flow — we don't have a real trainer to latch.
-     */
+    // Countdown state: wait for first pedal → count 5..1 → start. Gives the trainer time to latch ERG.
     sealed class StartupState {
         object Idle : StartupState()
         object Waiting : StartupState()
@@ -131,25 +115,17 @@ class WorkoutViewModel(
     /** Tracks whether we've already persisted this ride so we don't double-save. */
     private var rideSaved = false
 
-    /**
-     * Row id of the just-saved ride. Non-null once [saveRideToHistory] has succeeded.
-     * The Compose layer observes this and navigates to the ride-detail screen so the
-     * user lands on the same screen they'd see from History — completing the loop.
-     */
+    // Non-null once the ride is saved; triggers navigation to the ride detail screen.
     private val _savedRideId = MutableStateFlow<Long?>(null)
     val savedRideId: StateFlow<Long?> = _savedRideId.asStateFlow()
 
     init {
-        // Fresh workout session — clear any stale upload result from the last run.
         stravaRepository.resetUploadState()
 
         val workout = workoutDefinition ?: WorkoutRepository.getDemoWorkout()
         workoutEngine.loadWorkout(workout)
 
-        // Pull the user's body weight once and build the virtual-speed estimator.
-        // Speed + distance are written into the exported .fit file so Strava /
-        // Garmin show a realistic "Virtual Ride" with distance and avg speed;
-        // the live UI never surfaces them.
+        // Speed/distance go into the .fit file for Strava; the live UI doesn't show them.
         viewModelScope.launch {
             val weight = themePreferences.userWeightKg.first()
             workoutEngine.speedEstimator = VirtualSpeedEstimator(riderWeightKg = weight.toDouble())
@@ -175,9 +151,6 @@ class WorkoutViewModel(
         }
 
         workoutEngine.onWorkoutStarted = {
-            // Flip BLE into verbose-logging mode: per-sample sensor reads and
-            // per-write ACKs are only useful mid-ride, so the manager keeps
-            // quiet until a workout is actually running.
             bleManager.setWorkoutActive(true)
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
                 bleManager.requestFtmsControl()
@@ -203,14 +176,7 @@ class WorkoutViewModel(
                 }
         }
 
-        // ── Pre-send the first interval target as soon as the screen opens ──
-        // Previously we waited until the user tapped Start before sending any
-        // Page 49 frame. On Tacx FE-C trainers that means the first pedal
-        // stroke races the trainer's ERG latch — the rider often gets 20-30s
-        // of overshoot before the target is actually honored. By pushing the
-        // target on screen entry, combined with the FE-C burst window in
-        // BleManager.setTargetPower, the trainer is already locked into ERG
-        // by the time the user hits Start.
+        // Pre-send the first target on screen entry so the trainer is already locked by the time the user hits Start.
         viewModelScope.launch {
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
@@ -222,14 +188,7 @@ class WorkoutViewModel(
             }
         }
 
-        // ── Auto-arm the startup countdown on screen entry (non-demo) ──
-        // Historically the countdown only ran after the Play tap. In practice
-        // riders clip in, start pedaling, and expect the workout to begin —
-        // matches Zwift / TrainerRoad muscle memory. We move straight into
-        // Waiting so the "START PEDALING" overlay is the first thing users
-        // see; the first pedal stroke triggers the 5s countdown, which runs
-        // WorkoutEngine.start() at zero. The Play button still works (demo
-        // mode needs it), but it's redundant for a real ride.
+        // Auto-arm on entry so the "Start pedaling" prompt is the first thing the rider sees.
         if (!bleManager.isDemoMode.value) {
             viewModelScope.launch {
                 runStartupCountdown()
@@ -239,11 +198,6 @@ class WorkoutViewModel(
         }
     }
 
-    /**
-     * User tapped Play. In demo mode, start immediately. Otherwise run the pre-start
-     * flow: wait for first pedal stroke, then 5s countdown, then kick the engine.
-     * Re-entrant guard: if we're already in Waiting/Counting, ignore further presses.
-     */
     fun startWorkout() {
         if (_startupState.value != StartupState.Idle) return
         if (bleManager.isDemoMode.value) {
@@ -251,8 +205,7 @@ class WorkoutViewModel(
             return
         }
         viewModelScope.launch {
-            // Reopen the FE-C burst window so the trainer gets fresh Page 49 frames
-            // during the countdown — the pre-send from screen entry may have expired.
+            // Reopen the burst window so the trainer gets fresh frames during the countdown.
             if (_ergEnabled.value) {
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
@@ -266,10 +219,7 @@ class WorkoutViewModel(
         }
     }
 
-    /**
-     * Loop until we get a full uninterrupted 5-second countdown. If the rider stops
-     * pedaling mid-count (cadence → 0), reset to Waiting and try again.
-     */
+    // Waits for a pedal stroke, counts 5..1 uninterrupted — resets if the rider stops mid-count.
     private suspend fun runStartupCountdown() {
         val cadenceFlow = bleManager.powerData.map { it.cadence }
         while (true) {
@@ -297,12 +247,7 @@ class WorkoutViewModel(
     fun resumeWorkout() = workoutEngine.resume()
     fun stopWorkout() = workoutEngine.stop()
 
-    /**
-     * Silently write the completed workout to a .fit file in app-private storage.
-     * Idempotent — no-op if the file is already written for this session.
-     * The resulting file is held in [exportState] as [ExportState.Ready] so the
-     * post-workout UI can offer an "Upload to Strava" action against it.
-     */
+    // Idempotent — skips if already written this session.
     fun exportFitSilently(context: Context) {
         if (_exportState.value is ExportState.Ready ||
             _exportState.value is ExportState.InProgress) return
@@ -334,22 +279,13 @@ class WorkoutViewModel(
         }
     }
 
-    /**
-     * Push the freshly-exported .fit to Strava. No-op unless [exportFitSilently] has
-     * completed and the user is connected. The activity title matches the workout name.
-     */
     fun uploadExportedFitToStrava() {
         val ready = _exportState.value as? ExportState.Ready ?: return
         val workoutName = workoutEngine.workoutDefinition?.name ?: "WorkItOut session"
         stravaRepository.uploadFit(ready.file, workoutName)
     }
 
-    /**
-     * Persist the completed ride to Room. Called once when the workout reaches COMPLETED.
-     * Computes summary stats (avg/max power, NP, avg/max HR, avg cadence) from the
-     * recorded data points and serializes the data points as compact JSON for the
-     * detail-screen graph.
-     */
+    // Computes summary stats and serializes data points to JSON, then persists to Room.
     fun saveRideToHistory() {
         if (rideSaved) return
         val workout = workoutEngine.workoutDefinition ?: return
@@ -368,12 +304,9 @@ class WorkoutViewModel(
                 val maxHr = records.maxOf { it.heartRate }
                 val avgCadence = records.map { it.cadence }.average().toInt()
 
-                // Normalised Power: rolling 30-second average of the 4th power, then 4th root.
                 val np = computeNormalizedPower(powers)
-
                 val durationSec = records.lastOrNull()?.timeSeconds ?: 0
 
-                // Compact JSON: small keys to keep the blob lean.
                 val compactPoints = records.map {
                     CompactDataPoint(it.timeSeconds, it.actualPower, it.targetPower, it.heartRate, it.cadence)
                 }
@@ -396,24 +329,9 @@ class WorkoutViewModel(
                 _savedRideId.value = newId
                 Timber.i("Ride saved to history: ${workout.name} (id=$newId)")
 
-                // Optional auto-upload: if the user opted in and Strava is connected,
-                // hand the brand-new ride to the history uploader. We deliberately
-                // route through HistoryStravaUploader (not stravaRepository.uploadFit)
-                // so the ride row gets stamped with the activityId on success — that's
-                // what suppresses the manual "Upload to Strava" button on the ride
-                // detail screen we're about to navigate to.
                 val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
                 if (autoUpload && stravaRepository.isConnected.value) {
-                    // Wait for the silent .fit export to finish before handing
-                    // the ride to the uploader. saveRideToHistory() and
-                    // exportFitSilently() are fired back-to-back from
-                    // WorkoutScreen's LaunchedEffect(COMPLETED); without this
-                    // wait, OkHttp stats the still-growing .fit file, sends
-                    // Content-Length for the partial size, then streams more
-                    // bytes than it promised → ProtocolException: "expected
-                    // 4479 bytes but received 8192". 30s cap so we never
-                    // deadlock; if export fails, the uploader's own
-                    // regenerate-if-missing path covers us.
+                    // Wait for the .fit export before uploading — otherwise OkHttp sends a partial file.
                     Timber.i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
                     val terminal = withTimeoutOrNull(30_000L) {
                         exportState.first {
@@ -434,10 +352,7 @@ class WorkoutViewModel(
         }
     }
 
-    /**
-     * Toggle ERG mode. When turning OFF, release trainer control. When turning back ON,
-     * re-acquire control and immediately push the current target so the trainer catches up.
-     */
+    // When re-enabling ERG, re-acquire control and push the current target immediately.
     fun setErgEnabled(enabled: Boolean) {
         if (_ergEnabled.value == enabled) return
         _ergEnabled.value = enabled
@@ -465,10 +380,7 @@ data class CompactDataPoint(
     val c: Int    // cadence
 )
 
-/**
- * Normalised Power: 30-second rolling average → raise to 4th power → mean → 4th root.
- * Falls back to average power when fewer than 30 samples.
- */
+// NP formula: 30s rolling average → 4th power → mean → 4th root.
 private fun computeNormalizedPower(powers: List<Int>): Int {
     if (powers.size < 30) return powers.average().toInt()
     val rolling = powers.windowed(30) { window -> window.average() }

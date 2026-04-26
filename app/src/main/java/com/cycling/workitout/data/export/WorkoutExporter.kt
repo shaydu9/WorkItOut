@@ -16,24 +16,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Small orchestrator around [FitFileWriter] that knows where to put files
- * on the Android filesystem.
- *
- * Files land in: `context.filesDir/workouts/{yyyyMMdd_HHmmss}.fit`
- *
- * That directory is exposed to share sheets / Strava upload via the
- * `workitout.fileprovider` FileProvider declared in the manifest.
- */
+// Writes .fit files to context.filesDir/workouts/ and exposes them via FileProvider for Strava upload.
 object WorkoutExporter {
 
     private val FILENAME_FORMAT = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
     private val historyJson = Json { ignoreUnknownKeys = true }
 
-    /**
-     * Write the workout to a .fit file in the app's private `workouts/` dir.
-     * Safe to call from any thread; the encode runs on Dispatchers.IO.
-     */
     suspend fun exportToFit(
         context: Context,
         workout: WorkoutDefinition,
@@ -50,30 +38,13 @@ object WorkoutExporter {
         )
     }
 
-    /**
-     * Compute the canonical .fit path for a ride that started at [startedAtMillis].
-     * The file may or may not exist on disk — callers must check [File.exists].
-     */
     fun fitFileFor(context: Context, startedAtMillis: Long): File {
         val dir = File(context.filesDir, "workouts")
         val name = FILENAME_FORMAT.format(Date(startedAtMillis)) + ".fit"
         return File(dir, name)
     }
 
-    /**
-     * Build a .fit from a stored history row when the original file is gone
-     * (or never existed — e.g. rides recorded before the .fit feature shipped).
-     *
-     * The lap structure of the original workout is lost — old rows only store
-     * the per-second sample blob, not the interval boundaries — so we synthesise
-     * a single-interval [WorkoutDefinition] covering the whole ride. That's
-     * enough for Strava to categorise the upload correctly; lap analytics are
-     * forfeit for these regenerated files.
-     *
-     * Speed + distance are recomputed from power + the supplied weight via the
-     * same [VirtualSpeedEstimator] used live, so the regenerated file shows up
-     * as a proper Virtual Ride.
-     */
+    // Rebuilds a .fit from a stored history row — single-lap stub, recomputed speed, no per-interval analytics.
     suspend fun exportFromHistory(
         context: Context,
         ride: CompletedRideEntity,
@@ -83,7 +54,7 @@ object WorkoutExporter {
 
         val stubInterval = WorkoutIntervalDef(
             durationSeconds = ride.durationSeconds.coerceAtLeast(1),
-            targetPowerPercentFtp = 0.65f, // stub — history reconstruction doesn't need a canonical %
+            targetPowerPercentFtp = 0.65f,
             targetPowerWatts = ride.avgPowerWatts,
             name = ride.name,
             zone = PowerZone.Z2_ENDURANCE

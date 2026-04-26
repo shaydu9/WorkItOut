@@ -3,14 +3,7 @@ package com.cycling.workitout.data.network.anthropic.dto
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * Wire types for the Anthropic Messages API (v1).
- *
- * These are internal to the network layer — repositories translate between
- * them and domain types (`WorkoutDefinition`, etc.). Don't leak them upward.
- *
- * See: https://docs.anthropic.com/en/api/messages
- */
+// Anthropic Messages API wire types — internal to the network layer.
 
 @Serializable
 data class MessagesRequest(
@@ -27,13 +20,13 @@ data class SystemBlock(
     @SerialName("cache_control") val cacheControl: CacheControl? = null
 )
 
-/** Prompt caching hint — "ephemeral" = 5-minute TTL on the API's cache. */
+// Prompt cache hint — "ephemeral" gives a 5-minute TTL.
 @Serializable
 data class CacheControl(val type: String = "ephemeral")
 
 @Serializable
 data class Message(
-    val role: String,     // "user" | "assistant"
+    val role: String,
     val content: String
 )
 
@@ -47,9 +40,8 @@ data class MessagesResponse(
     @SerialName("stop_reason") val stopReason: String? = null
 )
 
-/** Claude's output is a list of blocks; we only care about `text` blocks today. */
 @Serializable
 data class ContentBlock(
-    val type: String,        // "text" | "tool_use" | …
+    val type: String,
     val text: String = ""
 )

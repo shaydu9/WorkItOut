@@ -5,11 +5,7 @@ import com.cycling.workitout.data.database.SavedDeviceDao
 import com.cycling.workitout.data.database.SavedDeviceEntity
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Repository for managing saved BLE devices.
- * Profile concept removed in Phase G — this just persists paired devices
- * so the app can auto-reconnect on startup.
- */
+// Persists paired BLE devices so the app can auto-reconnect on startup.
 class DeviceRepository(
     private val savedDeviceDao: SavedDeviceDao
 ) {
@@ -18,10 +14,6 @@ class DeviceRepository(
         return savedDeviceDao.getAllDevices()
     }
 
-    /**
-     * Save a newly connected device (insert) or bump its last-connected timestamp
-     * if it's already known.
-     */
     suspend fun saveDevice(bleDevice: BleDevice) {
         val existing = savedDeviceDao.getDeviceByMac(bleDevice.address)
         if (existing == null) {
@@ -38,9 +30,7 @@ class DeviceRepository(
                 )
             )
         } else {
-            // Always update the device type on re-pair. A device previously saved
-            // as POWER_METER might now correctly be classified as SMART_TRAINER
-            // (e.g. Tacx Neo 2T after the scan-classification fix).
+            // Refresh deviceType on re-pair so reclassifications (e.g. POWER_METER → SMART_TRAINER) take effect.
             val now = System.currentTimeMillis()
             savedDeviceDao.insertDevice(
                 existing.copy(

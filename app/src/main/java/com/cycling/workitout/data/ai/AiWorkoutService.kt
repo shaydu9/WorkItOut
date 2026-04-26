@@ -16,18 +16,7 @@ import retrofit2.HttpException
 import timber.log.Timber
 import kotlin.math.roundToInt
 
-/**
- * Builds a structured cycling workout via the Anthropic Messages API.
- *
- * This is a thin domain layer: it constructs the prompt, calls [AnthropicApi]
- * (which handles auth, retry, timeouts, JSON encoding via the network package),
- * pulls the JSON block out of Claude's text response, validates it, and maps
- * the result into a [WorkoutDefinition].
- *
- * Two entry points:
- *  - [generateStructured] — duration + difficulty + FTP
- *  - [generateFromPrompt] — freeform user description
- */
+// Builds a WorkoutDefinition from Claude's JSON response — two modes: structured or freeform prompt.
 class AiWorkoutService(
     private val anthropicApi: AnthropicApi = NetworkModule.anthropicApi
 ) {
@@ -130,11 +119,6 @@ class AiWorkoutService(
         throw IllegalStateException("Claude returned an invalid workout twice: $lastError")
     }
 
-    /**
-     * One round-trip to the Messages API. Returns the parsed inner workout DTO,
-     * or null if Claude's response didn't contain a decodable JSON block.
-     * HTTP-level failures and retries are handled inside [AnthropicApi].
-     */
     private suspend fun requestDto(userMessage: String): AiWorkoutDto? {
         val request = MessagesRequest(
             model = "claude-sonnet-4-6",
@@ -169,10 +153,7 @@ class AiWorkoutService(
         }
     }
 
-    /**
-     * Extract the first balanced JSON object from arbitrary text.
-     * Handles markdown fences, leading prose, and trailing commentary.
-     */
+    // Strips markdown fences and returns the first balanced JSON object from the text.
     private fun extractJsonObject(raw: String): String? {
         val s = raw.trim()
             .removePrefix("```json").removePrefix("```")
@@ -200,21 +181,9 @@ class AiWorkoutService(
         return null
     }
 
-    /** Outcome of validation: either a workout, or a human-readable rejection reason. */
     internal data class BuildResult(val workout: WorkoutDefinition?, val rejectionReason: String?)
 
-    /**
-     * Validate the DTO and either build a [WorkoutDefinition] or explain why we can't.
-     *
-     * Soft repairs (logged, not rejected):
-     *  - targetPct clamped to [MIN_TARGET_PCT, MAX_TARGET_PCT] per interval.
-     *  - per-interval durationSec clamped to [MIN_INTERVAL_SEC, MAX_INTERVAL_SEC].
-     *  - Total-duration drift ≤ SOFT_DRIFT_RATIO is silently rescaled to hit the target.
-     *
-     * Hard rejections (caller retries):
-     *  - Fewer than MIN_INTERVALS intervals.
-     *  - Drift > HARD_DRIFT_RATIO from the requested total.
-     */
+    // Clamps out-of-range values (soft), rejects structurally invalid responses (hard — caller retries).
     internal fun buildWorkoutOrNull(
         dto: AiWorkoutDto,
         ftp: Int,

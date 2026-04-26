@@ -40,13 +40,8 @@ fun WorkoutScreen(
     val stravaUploadState by viewModel.stravaUploadState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Confirmation dialog state — the Stop button no longer stops immediately;
-    // it asks "End workout?" first.
     var showEndDialog by remember { mutableStateOf(false) }
 
-    // Auto-export the .fit file and persist ride to history as soon as the
-    // workout reaches COMPLETED (natural finish or confirmed user stop).
-    // Both calls are idempotent.
     LaunchedEffect(progress.workoutState) {
         if (progress.workoutState == WorkoutState.COMPLETED) {
             viewModel.exportFitSilently(context)
@@ -75,9 +70,6 @@ fun WorkoutScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // ═══════════════════════════════════════
-            // TOP HALF (50%) — Workout Progress Graph
-            // ═══════════════════════════════════════
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -102,9 +94,6 @@ fun WorkoutScreen(
                 thickness = 2.dp
             )
 
-            // ═══════════════════════════════════════
-            // BOTTOM HALF (50%) — Stats grid + controls
-            // ═══════════════════════════════════════
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -153,11 +142,6 @@ fun WorkoutScreen(
             }
         }
 
-        // ═══════════════════════════════════════
-// Startup overlay — "Start pedaling" → 5..1 countdown.
-        // Covers the whole content area while visible; dismissed the moment
-        // the countdown hits 0 and WorkoutEngine.start() fires.
-        // ═══════════════════════════════════════
         StartupOverlay(
             state = startupState,
             modifier = Modifier.padding(padding)
@@ -189,10 +173,6 @@ fun WorkoutScreen(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Startup overlay — "Start pedaling" prompt + big 5..1 countdown
-// ═══════════════════════════════════════════════════════════════
 
 @Composable
 private fun StartupOverlay(
@@ -252,10 +232,6 @@ private fun StartupOverlay(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Stats grid (2×3) — the user-specified bottom-half stats
-// ═══════════════════════════════════════════════════════════════
-
 @Composable
 private fun StatsGrid(
     threeSecPower: Int,
@@ -268,11 +244,6 @@ private fun StatsGrid(
     currentFtp: Int,
     modifier: Modifier = Modifier
 ) {
-    // When the user has flipped the global display toggle to %-FTP, render
-    // power cells as "%" instead of "W". Target cell uses the interval's
-    // canonical percent via a simple round from watts/ftp (watts are a
-    // snapshot of that percent at the current FTP, so a round-trip through
-    // watts/ftp is exact).
     val percentOf = { watts: Int ->
         if (currentFtp <= 0) "--" else "${((watts.toDouble() / currentFtp) * 100).toInt()}"
     }
@@ -469,10 +440,6 @@ private fun ErgToggleRow(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Control bar
-// ═══════════════════════════════════════════════════════════════
-
 @Composable
 private fun ControlBar(
     workoutState: WorkoutState,
@@ -622,10 +589,6 @@ private fun ControlBar(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Workout Progress Graph (top half)
-// ═══════════════════════════════════════════════════════════════
 
 @Composable
 fun WorkoutProgressGraph(

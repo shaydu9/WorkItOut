@@ -2,9 +2,7 @@ package com.cycling.workitout.data
 
 import kotlin.math.roundToInt
 
-/**
- * Power zone classification based on Coggan standard zones
- */
+// Coggan power zones — Z1 recovery through Z6 anaerobic.
 enum class PowerZone(val label: String, val colorHex: Long) {
     Z1_RECOVERY("Recovery", 0xFF9E9E9E),       // Grey
     Z2_ENDURANCE("Endurance", 0xFF2196F3),      // Blue
@@ -28,22 +26,15 @@ enum class PowerZone(val label: String, val colorHex: Long) {
     }
 }
 
-/**
- * A single interval in a structured workout
- */
+// One interval — canonical %FTP plus a snapshot watts value resolved at load time.
 data class WorkoutIntervalDef(
     val durationSeconds: Int,
-    /** Canonical target as fraction of FTP (0.90 = 90% FTP). */
     val targetPowerPercentFtp: Float,
-    /** Snapshot watts resolved at load time from the user's current FTP. */
     val targetPowerWatts: Int,
     val name: String,
     val zone: PowerZone
 )
 
-/**
- * A complete workout definition
- */
 data class WorkoutDefinition(
     val id: String,
     val name: String,
@@ -52,19 +43,12 @@ data class WorkoutDefinition(
     val totalDurationSeconds: Int = intervals.sumOf { it.durationSeconds }
 )
 
-/**
- * Resolve every interval's [WorkoutIntervalDef.targetPowerWatts] from its canonical
- * percent-FTP against the supplied FTP. Call this at load/handoff time so each
- * workout shows the user's current FTP (not whatever FTP was stored when saved).
- */
+// Recomputes targetPowerWatts from each interval's canonical %FTP — call at load time so saved workouts track the user's current FTP.
 fun WorkoutDefinition.withFtp(ftp: Int): WorkoutDefinition =
     copy(intervals = intervals.map {
         it.copy(targetPowerWatts = (it.targetPowerPercentFtp * ftp).roundToInt().coerceAtLeast(40))
     })
 
-/**
- * Workout execution state
- */
 enum class WorkoutState {
     NOT_STARTED,
     RUNNING,
@@ -72,9 +56,6 @@ enum class WorkoutState {
     COMPLETED
 }
 
-/**
- * Snapshot of the workout engine's current state
- */
 data class WorkoutProgress(
     val workoutState: WorkoutState = WorkoutState.NOT_STARTED,
     val workoutName: String = "",
@@ -91,19 +72,14 @@ data class WorkoutProgress(
     val currentZone: PowerZone = PowerZone.Z1_RECOVERY
 )
 
-/**
- * A recorded data point during the workout (for the real-time graph)
- */
+// One sample captured during a ride — feeds the live graph and the .fit exporter.
 data class RecordedDataPoint(
     val timeSeconds: Int,
     val actualPower: Int,
     val targetPower: Int,
     val heartRate: Int,
     val cadence: Int,
-    /** Wall-clock epoch millis when this point was recorded. Used by the .fit exporter. */
     val epochMillis: Long = 0L,
-    /** Virtual speed derived from power + weight. */
     val speedMps: Float = 0f,
-    /** Running cumulative distance at this point, in meters. */
     val distanceMeters: Float = 0f
 )

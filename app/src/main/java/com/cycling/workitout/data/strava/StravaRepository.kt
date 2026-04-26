@@ -14,18 +14,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
 
-/**
- * App-singleton facade for Strava connectivity. Owns a [StravaTokenStore] +
- * [StravaClient] pair and exposes Compose-friendly StateFlows for the UI:
- *
- *  - [isConnected]   — do we have a refresh token in the store?
- *  - [athleteName]   — cached display name ("Connected as …")
- *  - [uploadState]   — current upload lifecycle (Idle/Uploading/Success/Failed)
- *
- * `beginConnect(context)` kicks off the OAuth flow in a Custom Tab; the
- * browser redirects back through `workitout://strava-callback?code=…` which
- * MainActivity hands to [handleAuthCallback].
- */
+// Facade for Strava OAuth + upload; exposes isConnected, athleteName, and uploadState as StateFlows.
 class StravaRepository(context: Context) {
 
     private val appContext = context.applicationContext
@@ -33,8 +22,6 @@ class StravaRepository(context: Context) {
     private val client = StravaClient(tokens)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    // ── UI state ────────────────────────────────────────────────────────
 
     private val _isConnected = MutableStateFlow(tokens.hasTokens)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()

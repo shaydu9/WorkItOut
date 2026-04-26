@@ -4,11 +4,7 @@ import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 
-/**
- * Fallback demo workouts used when no workout is handed to the engine (e.g. demo mode).
- * Percent-FTP values are canonical; watt snapshots assume a default 200W FTP and are
- * overwritten by [com.cycling.workitout.data.withFtp] on real entry to the engine.
- */
+// Demo-mode fallback workouts — watts assume 200W FTP and get re-resolved via withFtp() on entry.
 object WorkoutRepository {
 
     private const val DEFAULT_FTP = 200

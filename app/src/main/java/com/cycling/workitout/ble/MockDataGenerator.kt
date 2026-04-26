@@ -13,36 +13,27 @@ import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.random.Random
 
-/**
- * Generates realistic mock cycling data for demo/testing purposes
- * Simulates a realistic cycling workout with variations
- */
+// Synthesizes plausible HR/power/cadence streams for the demo mode.
 class MockDataGenerator(private val scope: CoroutineScope) {
-    
+
     private var mockDataJob: Job? = null
     private var elapsedSeconds = 0
-    
-    // External target power (set by workout engine for realistic demo data)
+
     private var externalTargetPower: Int? = null
 
-    // Simulated workout state
-    private var baseHeartRate = 120 // Base HR around threshold
-    private var basePower = 200 // Base power around FTP
-    private var baseCadence = 85 // Typical cadence
-    
-    // State flows for mock data
+    private var baseHeartRate = 120
+    private var basePower = 200
+    private var baseCadence = 85
+
     private val _isActive = MutableStateFlow(false)
     val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
-    
+
     private val _heartRateData = MutableStateFlow(HeartRateData(0))
     val heartRateData: StateFlow<HeartRateData> = _heartRateData.asStateFlow()
-    
+
     private val _powerData = MutableStateFlow(PowerData(0, 0))
     val powerData: StateFlow<PowerData> = _powerData.asStateFlow()
-    
-    /**
-     * Start generating mock data
-     */
+
     fun start() {
         if (_isActive.value) return
         
@@ -52,15 +43,12 @@ class MockDataGenerator(private val scope: CoroutineScope) {
         mockDataJob = scope.launch {
             while (_isActive.value) {
                 generateRealisticData()
-                delay(1000) // Update every second
+                delay(1000)
                 elapsedSeconds++
             }
         }
     }
-    
-    /**
-     * Stop generating mock data
-     */
+
     fun stop() {
         _isActive.value = false
         mockDataJob?.cancel()
@@ -70,29 +58,19 @@ class MockDataGenerator(private val scope: CoroutineScope) {
         elapsedSeconds = 0
     }
     
-    /**
-     * Set external target power (used by workout engine in demo mode)
-     */
     fun setTargetPower(watts: Int) {
         externalTargetPower = watts
     }
 
-    /**
-     * Clear external target power (revert to internal phase-based generation)
-     */
     fun clearTargetPower() {
         externalTargetPower = null
     }
 
-    /**
-     * Generate realistic cycling data with variations
-     * Simulates intervals, fatigue, and natural variations
-     */
     private fun generateRealisticData() {
         val targetPower = externalTargetPower
 
         if (targetPower != null) {
-            // Workout-driven mode: generate data around the target power
+            // Track the workout target so demo data tracks ERG behavior.
             basePower = targetPower
             baseCadence = when {
                 targetPower < 140 -> 75
@@ -109,74 +87,47 @@ class MockDataGenerator(private val scope: CoroutineScope) {
                 else -> 180
             }
         } else {
-            // Internal phase-based generation (original behavior)
-            val workoutPhase = (elapsedSeconds / 30) % 4 // 30-second phases
-
+            // No external target — cycle through 30s easy/moderate/hard/sprint phases.
+            val workoutPhase = (elapsedSeconds / 30) % 4
             when (workoutPhase) {
-                0 -> { // Easy/recovery
-                    baseHeartRate = 110
-                    basePower = 150
-                    baseCadence = 75
-                }
-                1 -> { // Moderate
-                    baseHeartRate = 135
-                    basePower = 220
-                    baseCadence = 88
-                }
-                2 -> { // Hard interval
-                    baseHeartRate = 165
-                    basePower = 300
-                    baseCadence = 95
-                }
-                3 -> { // Sprint!
-                    baseHeartRate = 175
-                    basePower = 380
-                    baseCadence = 105
-                }
+                0 -> { baseHeartRate = 110; basePower = 150; baseCadence = 75 }
+                1 -> { baseHeartRate = 135; basePower = 220; baseCadence = 88 }
+                2 -> { baseHeartRate = 165; basePower = 300; baseCadence = 95 }
+                3 -> { baseHeartRate = 175; basePower = 380; baseCadence = 105 }
             }
         }
-        
-        // Add natural variations using sine wave + random noise
+
         val time = elapsedSeconds.toDouble()
-        val sineVariation = sin(time / 10.0) * 0.1 // Smooth wave
-        val randomNoise = (Random.nextDouble() - 0.5) * 0.15 // Random fluctuation
+        val sineVariation = sin(time / 10.0) * 0.1
+        val randomNoise = (Random.nextDouble() - 0.5) * 0.15
         val totalVariation = 1.0 + sineVariation + randomNoise
-        
-        // Generate heart rate (60-190 bpm range)
+
         val heartRate = (baseHeartRate * totalVariation).toInt().coerceIn(60, 190)
-        
-        // Generate power (0-450W range, can drop to 0 during coasting)
+
         val powerVariation = 1.0 + (Random.nextDouble() - 0.5) * 0.2
         var power = (basePower * powerVariation).toInt().coerceIn(0, 450)
-        
-        // Occasionally simulate coasting (5% chance)
+
+        // 5% chance of a coasting blip.
         if (Random.nextDouble() < 0.05) {
-            power = Random.nextInt(0, 30) // Very low power while coasting
+            power = Random.nextInt(0, 30)
         }
-        
-        // Generate cadence (0-120 rpm range)
+
         val cadenceVariation = 1.0 + (Random.nextDouble() - 0.5) * 0.15
         var cadence = (baseCadence * cadenceVariation).toInt().coerceIn(0, 120)
-        
-        // Cadence drops when coasting
         if (power < 30) {
             cadence = Random.nextInt(0, 40)
         }
-        
-        // Simulate fatigue over time (slight HR drift up, power down)
+
+        // Slight HR drift up + power drift down to fake fatigue.
         val fatigueMinutes = elapsedSeconds / 60.0
         val fatigueFactor = (fatigueMinutes * 0.002).coerceIn(0.0, 0.1)
         val heartRateWithFatigue = (heartRate * (1.0 + fatigueFactor)).toInt().coerceIn(60, 190)
         val powerWithFatigue = (power * (1.0 - fatigueFactor * 0.5)).toInt().coerceIn(0, 450)
-        
-        // Update state flows
+
         _heartRateData.value = HeartRateData(heartRate = heartRateWithFatigue)
         _powerData.value = PowerData(power = powerWithFatigue, cadence = cadence)
     }
-    
-    /**
-     * Get a description of current workout phase
-     */
+
     fun getCurrentPhaseDescription(): String {
         val phase = (elapsedSeconds / 30) % 4
         return when (phase) {
@@ -188,9 +139,6 @@ class MockDataGenerator(private val scope: CoroutineScope) {
         }
     }
     
-    /**
-     * Get elapsed time formatted as MM:SS
-     */
     fun getElapsedTimeFormatted(): String {
         val minutes = elapsedSeconds / 60
         val seconds = elapsedSeconds % 60

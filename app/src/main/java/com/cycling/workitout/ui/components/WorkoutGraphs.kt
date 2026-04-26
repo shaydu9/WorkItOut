@@ -23,9 +23,6 @@ import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
 import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
 import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
 
-/**
- * Workout interval for structured training
- */
 data class WorkoutInterval(
     val durationSeconds: Int,
     val targetPower: Int,
@@ -33,17 +30,12 @@ data class WorkoutInterval(
     val color: Color
 )
 
-/**
- * Power data point for real-time graph
- */
 data class PowerDataPoint(
     val timeSeconds: Int,
     val power: Int
 )
 
-/**
- * Displays workout structure graph (planned intervals) using Vico
- */
+// Column chart of planned intervals.
 @Composable
 fun WorkoutStructureGraph(
     intervals: List<WorkoutInterval>,
@@ -53,7 +45,6 @@ fun WorkoutStructureGraph(
     val totalDuration = intervals.sumOf { it.durationSeconds }
     
     Column(modifier = modifier) {
-        // Title
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -74,18 +65,15 @@ fun WorkoutStructureGraph(
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        // Prepare data for Vico column chart
         val modelProducer = remember { CartesianChartModelProducer() }
-        
+
         LaunchedEffect(intervals) {
             val yValues = intervals.map { it.targetPower as Number }
-            
             modelProducer.runTransaction {
                 columnSeries { series(yValues) }
             }
         }
-        
-        // Create column components with interval colors
+
         val columnComponents = intervals.map { interval ->
             rememberLineComponent(
                 color = interval.color,
@@ -93,7 +81,6 @@ fun WorkoutStructureGraph(
             )
         }
         
-        // Chart
         CartesianChartHost(
             chart = rememberCartesianChart(
                 rememberColumnCartesianLayer(
@@ -111,7 +98,6 @@ fun WorkoutStructureGraph(
                 .background(MaterialTheme.colorScheme.surface)
         )
         
-        // Current interval info
         val currentInterval = remember(currentTimeSeconds) {
             var cumulative = 0
             intervals.find { interval ->
@@ -144,9 +130,7 @@ fun WorkoutStructureGraph(
     }
 }
 
-/**
- * Displays real-time power graph with actual vs target using Vico
- */
+// Live actual-vs-target power line chart for the last 2 minutes.
 @Composable
 fun RealTimePowerGraph(
     powerDataPoints: List<PowerDataPoint>,
@@ -154,10 +138,9 @@ fun RealTimePowerGraph(
     currentTimeSeconds: Int,
     modifier: Modifier = Modifier
 ) {
-    val timeWindow = 120 // Show last 2 minutes
-    
+    val timeWindow = 120
+
     Column(modifier = modifier) {
-        // Title and current values
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -172,9 +155,9 @@ fun RealTimePowerGraph(
             val currentPower = powerDataPoints.lastOrNull()?.power ?: 0
             val variance = currentPower - targetPower
             val varianceColor = when {
-                variance > 20 -> Color(0xFFFF5252) // Too high
-                variance < -20 -> Color(0xFF2196F3) // Too low
-                else -> Color(0xFF4CAF50) // Good
+                variance > 20 -> Color(0xFFFF5252)
+                variance < -20 -> Color(0xFF2196F3)
+                else -> Color(0xFF4CAF50)
             }
             
             Text(
@@ -188,29 +171,25 @@ fun RealTimePowerGraph(
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        // Prepare data for Vico line chart
         val modelProducer = remember { CartesianChartModelProducer() }
-        
+
         LaunchedEffect(powerDataPoints, currentTimeSeconds) {
-            val visiblePoints = powerDataPoints.filter { 
-                it.timeSeconds >= (currentTimeSeconds - timeWindow).coerceAtLeast(0) && 
-                it.timeSeconds <= currentTimeSeconds 
+            val visiblePoints = powerDataPoints.filter {
+                it.timeSeconds >= (currentTimeSeconds - timeWindow).coerceAtLeast(0) &&
+                it.timeSeconds <= currentTimeSeconds
             }
-            
             if (visiblePoints.isNotEmpty()) {
                 val actualPowers = visiblePoints.map { it.power as Number }
                 val targetPowers = visiblePoints.map { targetPower as Number }
-                
                 modelProducer.runTransaction {
                     lineSeries {
-                        series(actualPowers) // Actual power
-                        series(targetPowers) // Target power
+                        series(actualPowers)
+                        series(targetPowers)
                     }
                 }
             }
         }
-        
-        // Chart with default line styles (Vico will handle styling)
+
         CartesianChartHost(
             chart = rememberCartesianChart(
                 rememberLineCartesianLayer(),
@@ -224,7 +203,6 @@ fun RealTimePowerGraph(
                 .background(MaterialTheme.colorScheme.surface)
         )
         
-        // Legend
         val cyan = Color(0xFF00BCD4)
         val gray = Color.Gray
         
@@ -270,28 +248,22 @@ private fun LegendItem(color: Color, label: String) {
     }
 }
 
-/**
- * Format seconds to MM:SS
- */
 private fun formatTime(seconds: Int): String {
     val mins = seconds / 60
     val secs = seconds % 60
     return String.format("%d:%02d", mins, secs)
 }
 
-/**
- * Generate demo workout intervals
- */
 fun generateDemoWorkout(): List<WorkoutInterval> {
     return listOf(
-        WorkoutInterval(120, 150, "Warmup", Color(0xFF4CAF50)),      // Green - Recovery
-        WorkoutInterval(180, 220, "Endurance", Color(0xFF2196F3)),   // Blue - Endurance
-        WorkoutInterval(60, 300, "Threshold", Color(0xFFFFC107)),    // Yellow - Threshold
-        WorkoutInterval(30, 380, "Sprint", Color(0xFFFF5252)),       // Red - VO2 Max
-        WorkoutInterval(90, 150, "Recovery", Color(0xFF4CAF50)),     // Green - Recovery
-        WorkoutInterval(180, 220, "Endurance", Color(0xFF2196F3)),   // Blue - Endurance
-        WorkoutInterval(60, 300, "Threshold", Color(0xFFFFC107)),    // Yellow - Threshold
-        WorkoutInterval(30, 380, "Sprint", Color(0xFFFF5252)),       // Red - VO2 Max
-        WorkoutInterval(120, 150, "Cooldown", Color(0xFF4CAF50))     // Green - Recovery
+        WorkoutInterval(120, 150, "Warmup", Color(0xFF4CAF50)),
+        WorkoutInterval(180, 220, "Endurance", Color(0xFF2196F3)),
+        WorkoutInterval(60, 300, "Threshold", Color(0xFFFFC107)),
+        WorkoutInterval(30, 380, "Sprint", Color(0xFFFF5252)),
+        WorkoutInterval(90, 150, "Recovery", Color(0xFF4CAF50)),
+        WorkoutInterval(180, 220, "Endurance", Color(0xFF2196F3)),
+        WorkoutInterval(60, 300, "Threshold", Color(0xFFFFC107)),
+        WorkoutInterval(30, 380, "Sprint", Color(0xFFFF5252)),
+        WorkoutInterval(120, 150, "Cooldown", Color(0xFF4CAF50))
     )
 }

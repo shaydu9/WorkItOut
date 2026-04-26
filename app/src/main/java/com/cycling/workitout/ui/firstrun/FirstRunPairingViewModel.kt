@@ -15,9 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/**
- * Steps of the first-run pairing stepper.
- */
 enum class PairingStep {
     TRAINER,
     HEART_RATE,
@@ -71,7 +68,6 @@ class FirstRunPairingViewModel(
                 DeviceType.POWER_METER -> bleManager.connectPowerMeter(device)
                 else -> Unit
             }
-            // Persist so we can auto-reconnect on subsequent launches.
             deviceRepository.saveDevice(device)
         }
     }

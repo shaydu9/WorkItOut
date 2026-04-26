@@ -2,9 +2,7 @@ package com.cycling.workitout.ble
 
 import java.util.UUID
 
-/**
- * Bluetooth LE GATT service and characteristic UUIDs for cycling sensors
- */
+// BLE GATT UUIDs and FTMS opcodes for cycling sensors and trainers.
 object BleConstants {
     // Standard BLE Services
     val HEART_RATE_SERVICE_UUID: UUID = UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb")
@@ -37,14 +35,9 @@ object BleConstants {
     // Client Characteristic Configuration Descriptor (for enabling notifications)
     val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
-    // ── Tacx FE-C over BLE ───────────────────────────────────────────────
-    // Tacx's proprietary Nordic-UART-style service that tunnels ANT+ FE-C
-    // frames. Used as a fallback ERG control path on trainers (e.g. Tacx Neo
-    // 2T) that ship in "FE-C BLE" mode rather than FTMS mode.
+    // Tacx FE-C-over-BLE — proprietary tunnel for ANT+ FE-C frames; used when a trainer ships in FE-C mode instead of FTMS.
     val TACX_FEC_SERVICE_UUID: UUID = UUID.fromString("6e40fec1-b5a3-f393-e0a9-e50e24dcca9e")
-    //   Write (commands from app → trainer). Acknowledged, WRITE_TYPE_DEFAULT.
     val TACX_FEC_WRITE_CHAR_UUID: UUID = UUID.fromString("6e40fec3-b5a3-f393-e0a9-e50e24dcca9e")
-    //   Notify (trainer → app broadcast: Pages 16, 25, etc.)
     val TACX_FEC_NOTIFY_CHAR_UUID: UUID = UUID.fromString("6e40fec2-b5a3-f393-e0a9-e50e24dcca9e")
 
     // ANT+ FE-C message framing constants

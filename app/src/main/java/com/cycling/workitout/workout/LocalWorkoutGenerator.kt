@@ -7,11 +7,7 @@ import com.cycling.workitout.ui.home.Difficulty
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/**
- * Procedural fallback workout generator.
- * Stand-in until Phase D wires Claude API in AiWorkoutService.
- * Produces a structured workout that scales with duration, difficulty, and FTP.
- */
+// Fallback workout generator — used when the AI service isn't available.
 object LocalWorkoutGenerator {
 
     fun generate(durationMinutes: Int, difficulty: Difficulty, ftp: Int): WorkoutDefinition {
@@ -20,9 +16,7 @@ object LocalWorkoutGenerator {
         val cooldown = (totalSec * 0.12).roundToInt().coerceAtLeast(180)
         val mainBlock = totalSec - warmup - cooldown
 
-        // Build an interval from a canonical FTP percentage — we stamp both
-        // the percent (the source of truth) and a snapshot in watts at the
-        // user's current FTP for immediate consumption by the engine.
+        // Stamps both the canonical FTP% and the snapshot watts at current FTP.
         fun ival(duration: Int, percentFtp: Double, name: String, zone: PowerZone) =
             WorkoutIntervalDef(
                 durationSeconds = duration,
@@ -137,10 +131,7 @@ object LocalWorkoutGenerator {
     /** The durations offered in the default starter library (also the Home quick-pick set). */
     val DEFAULT_DURATIONS: List<Int> = listOf(30, 45, 60, 75, 90)
 
-    /**
-     * A 5×4 grid of starter workouts: every supported duration at every difficulty.
-     * Deterministic — same inputs, same output — so we don't need to persist these.
-     */
+    // 5×4 grid of starter workouts — deterministic, no need to persist.
     fun getDefaultLibrary(ftp: Int): List<WorkoutDefinition> =
         DEFAULT_DURATIONS.flatMap { duration ->
             Difficulty.values().map { difficulty -> generate(duration, difficulty, ftp) }

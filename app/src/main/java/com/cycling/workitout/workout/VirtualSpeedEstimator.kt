@@ -3,17 +3,7 @@ package com.cycling.workitout.workout
 import kotlin.math.cbrt
 import kotlin.math.max
 
-/**
- * Power → virtual road speed on a flat course, using the standard cycling
- * physics balance (aero drag + rolling resistance + drivetrain loss). Mirrors
- * the approach Zwift uses so the exported .fit file gets a believable speed
- * and distance for Strava's "Virtual Ride" display.
- *
- * Force balance at steady state:
- *   P · η = 0.5·ρ·CdA·v³ + Crr·m·g·v
- * Solved for v by Newton-Raphson (always converges in ≤6 iterations for the
- * power/weight range we care about).
- */
+// Converts power to virtual road speed using standard cycling physics (aero + rolling + drivetrain).
 class VirtualSpeedEstimator(
     riderWeightKg: Double,
     private val bikeWeightKg: Double = 8.0,
@@ -24,7 +14,6 @@ class VirtualSpeedEstimator(
 ) {
     private val totalMassKg = riderWeightKg + bikeWeightKg
 
-    /** Virtual road speed for a given power reading, in meters per second. */
     fun speedMpsFor(powerWatts: Int): Float {
         if (powerWatts <= 0) return 0f
         val pEffective = powerWatts * drivetrainEfficiency

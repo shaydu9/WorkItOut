@@ -75,10 +75,8 @@ fun RideDetailScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header
                 RideHeader(r)
 
-                // Strava sync — upload button or "already synced" badge
                 StravaSyncSection(
                     ride = r,
                     uploadState = uploadState,
@@ -87,7 +85,6 @@ fun RideDetailScreen(
                     onClearError = viewModel::clearUploadError
                 )
 
-                // Power graph
                 if (dataPoints.isNotEmpty()) {
                     SectionTitle("Power")
                     PowerGraph(
@@ -98,7 +95,6 @@ fun RideDetailScreen(
                     )
                 }
 
-                // Heart rate graph
                 if (dataPoints.isNotEmpty() && dataPoints.any { it.hr > 0 }) {
                     SectionTitle("Heart Rate")
                     HeartRateGraph(
@@ -109,7 +105,6 @@ fun RideDetailScreen(
                     )
                 }
 
-                // Stats grid
                 SectionTitle("Summary")
                 StatsGrid(r)
             }
@@ -160,8 +155,7 @@ private fun StravaSyncSection(
     onClearError: () -> Unit
 ) {
     val context = LocalContext.current
-    // The DB row is the source of truth — once stamped, the button is gone forever.
-    // (uploadState may also report Success transiently; treat both as "done".)
+    // DB row is source of truth; transient Success counts as "done" too.
     val persistedActivityId = ride.stravaActivityId
     val transientActivityId = (uploadState as? HistoryStravaUploader.UploadState.Success)?.activityId
     val activityId = persistedActivityId ?: transientActivityId
@@ -325,9 +319,6 @@ private fun DetailStatCard(label: String, value: String, modifier: Modifier = Mo
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Graphs
-// ═══════════════════════════════════════════════════════════════
 
 @Composable
 private fun PowerGraph(dataPoints: List<CompactDataPoint>, modifier: Modifier = Modifier) {
@@ -345,7 +336,6 @@ private fun PowerGraph(dataPoints: List<CompactDataPoint>, modifier: Modifier = 
                 val maxTime = dataPoints.last().t.toFloat().coerceAtLeast(1f)
                 val maxPower = dataPoints.maxOf { maxOf(it.p, it.tp) }.toFloat().coerceAtLeast(1f) * 1.1f
 
-                // Target power trace (faded)
                 val targetPath = Path()
                 dataPoints.forEachIndexed { i, dp ->
                     val x = (dp.t / maxTime) * size.width
@@ -354,7 +344,6 @@ private fun PowerGraph(dataPoints: List<CompactDataPoint>, modifier: Modifier = 
                 }
                 drawPath(targetPath, targetColor, style = Stroke(width = 2.dp.toPx()))
 
-                // Actual power trace
                 val powerPath = Path()
                 dataPoints.forEachIndexed { i, dp ->
                     val x = (dp.t / maxTime) * size.width
@@ -364,7 +353,6 @@ private fun PowerGraph(dataPoints: List<CompactDataPoint>, modifier: Modifier = 
                 drawPath(powerPath, powerColor, style = Stroke(width = 2.dp.toPx()))
             }
 
-            // Legend
             Row(
                 modifier = Modifier.align(Alignment.TopEnd),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)

@@ -60,7 +60,6 @@ class HomeViewModel(
 
     val isDemoMode: StateFlow<Boolean> = bleManager.isDemoMode
 
-    /** Whether workout-target UI renders as percent of FTP vs. raw watts. */
     val displayAsPercent: StateFlow<Boolean> = preferences.displayTargetsAsPercent
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -88,10 +87,7 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(customPromptText = text)
     }
 
-    /**
-     * Generate a workout for the selected duration + difficulty via the Claude API,
-     * falling back to the local procedural generator if the call fails.
-     */
+    // Calls Claude; falls back to the local procedural generator if the API call fails.
     fun generateWorkout() {
         _uiState.value = _uiState.value.copy(isGenerating = true, error = null)
         viewModelScope.launch {
@@ -120,9 +116,6 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * Generate a workout from a freeform user prompt (typed or transcribed from voice).
-     */
     fun generateCustomWorkout() {
         val prompt = _uiState.value.customPromptText.trim()
         if (prompt.isBlank()) return
@@ -157,11 +150,8 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    // ── Workout Library ────────────────────────────────────────────────
-
     private val dao = WorkItOutApplication.database.savedWorkoutDao()
 
-    /** Save the currently-previewed workout to the library. */
     fun saveWorkoutToLibrary() {
         val workout = _uiState.value.preview ?: return
         viewModelScope.launch {
@@ -191,22 +181,17 @@ class HomeViewModel(
     }
 }
 
-/** Compact serializable interval for the JSON blob in saved_workouts. */
+// Compact JSON shape for intervals in the saved_workouts table — pp is null on pre-v2 rows.
 @Serializable
 data class CompactInterval(
-    val d: Int,            // durationSeconds
-    val p: Int,            // targetPowerWatts snapshot at save time
-    val n: String,         // name
-    val z: String,         // PowerZone enum name
-    val pp: Float? = null  // targetPowerPercentFtp — canonical since v2. Null on rows saved before the schema bump
+    val d: Int,
+    val p: Int,
+    val n: String,
+    val z: String,
+    val pp: Float? = null
 )
 
-/**
- * Reconstruct a [WorkoutDefinition] from a [SavedWorkoutEntity]. If the saved row
- * carries a canonical percent-FTP value we use it; otherwise we back-fill from the
- * snapshot watts using the user's current FTP (caller should then re-resolve with
- * [com.cycling.workitout.data.withFtp] so watts reflect the *current* FTP).
- */
+// Rebuilds a WorkoutDefinition from a saved row, back-filling %FTP from snapshot watts on legacy rows.
 fun SavedWorkoutEntity.toWorkoutDefinition(currentFtp: Int): WorkoutDefinition {
     val intervals = Json.decodeFromString<List<CompactInterval>>(intervalsJson).map {
         val pct = it.pp

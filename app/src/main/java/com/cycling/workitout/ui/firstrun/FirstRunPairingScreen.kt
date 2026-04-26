@@ -31,11 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
 
-/**
- * BLE runtime permissions we must hold before calling startScan()/connect().
- * Android 12+ (API 31): BLUETOOTH_SCAN + BLUETOOTH_CONNECT.
- * Android <12: ACCESS_FINE_LOCATION (required for BLE scans to return results).
- */
+// API 31+ wants BLUETOOTH_SCAN/CONNECT; older Androids piggyback on FINE_LOCATION for scans.
 private val REQUIRED_BLE_PERMISSIONS: Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(
@@ -64,8 +60,7 @@ fun FirstRunPairingScreen(
     val context = LocalContext.current
     var permissionDenied by remember { mutableStateOf(false) }
 
-    // Holds the action to run once BLE permissions are granted. Lets a single
-    // launcher serve both the trainer and HR scan buttons.
+    // Lets one launcher serve both scan buttons — stash the action and run it once permissions land.
     var pendingPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -81,8 +76,7 @@ fun FirstRunPairingScreen(
         pendingPermissionAction = null
     }
 
-    // Request-or-run: if we already hold the permissions run immediately,
-    // otherwise stash the action and fire the system prompt.
+    // Run the action immediately if permissions are already held, otherwise prompt first.
     val runWithBlePermissions: (() -> Unit) -> Unit = { action ->
         val allGranted = REQUIRED_BLE_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED

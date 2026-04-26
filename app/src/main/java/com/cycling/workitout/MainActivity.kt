@@ -29,24 +29,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // If the Activity was launched cold via the Strava OAuth redirect, the
-        // callback intent is already sitting on us. onNewIntent handles the
-        // warm-start case (singleTask re-entry after Custom Tabs completes).
+        // Cold-start OAuth: intent is already here. onNewIntent handles the warm (singleTask) case.
         handleStravaCallbackIfPresent(intent)
-        
-        // Hide status bar and make fullscreen
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        windowInsetsController.apply {
-            // Hide the status bar
+        WindowCompat.getInsetsController(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.statusBars())
-            // Set behavior for immersive mode (swipe to temporarily show system bars)
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-        
-        // Initialize BLE Manager
+
         bleManager = BleManager(applicationContext)
-        
+
         // Load power smoothing preference
         lifecycleScope.launch {
             val powerSmoothingSeconds = WorkItOutApplication.themePreferences.powerSmoothingSeconds.first()
@@ -82,12 +75,7 @@ class MainActivity : ComponentActivity() {
         handleStravaCallbackIfPresent(intent)
     }
 
-    /**
-     * If [intent] is the `workitout://workitout/strava-callback?code=…` deep link
-     * from the Custom Tab, hand it to the Strava repository to exchange for tokens.
-     * Host is `workitout` to match Strava's Authorization Callback Domain; the
-     * `/strava-callback` path distinguishes this from any future deep links.
-     */
+    // Handles the workitout://workitout/strava-callback deep link from the Custom Tab.
     private fun handleStravaCallbackIfPresent(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.scheme == "workitout" &&

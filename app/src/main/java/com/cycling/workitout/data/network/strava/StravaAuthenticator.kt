@@ -9,27 +9,7 @@ import okhttp3.Response
 import okhttp3.Route
 import timber.log.Timber
 
-/**
- * OkHttp [Authenticator] — the idiomatic place to handle token rotation.
- *
- * Runs **only** when a response comes back 401 Unauthorized. Preferred over
- * preemptive "is the token expired yet?" checks on every request: it sidesteps
- * clock-skew bugs and only refreshes when the server actually says so.
- *
- * Flow:
- *  1. Original request → 401.
- *  2. OkHttp invokes [authenticate] on its dispatcher thread.
- *  3. We check if we've already retried once (to prevent infinite loops) and
- *     that the failing URL isn't itself the refresh endpoint.
- *  4. Refresh the token synchronously via [stravaApiProvider]. A lambda is
- *     used rather than a direct [StravaApi] reference so [NetworkModule] can
- *     construct the API lazily — breaks the circular dep between Retrofit
- *     and its own Authenticator.
- *  5. Return the original request with the new Bearer — OkHttp retries it.
- *
- * Returning `null` tells OkHttp "give up" — the original 401 bubbles to the
- * caller and surfaces as a clean error in the UI.
- */
+// Handles 401s from Strava by refreshing the access token and retrying once.
 class StravaAuthenticator(
     private val tokenStore: StravaTokenStore,
     private val stravaApiProvider: () -> StravaApi
@@ -77,11 +57,6 @@ class StravaAuthenticator(
             .build()
     }
 
-    /**
-     * Count how many times this response chain has been tried. Each retry adds
-     * one link via `priorResponse`. If we've already retried once and still got
-     * 401, the refresh didn't stick — bail out.
-     */
     private fun responseCount(response: Response): Int {
         var result = 1
         var prior = response.priorResponse

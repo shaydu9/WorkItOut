@@ -25,10 +25,7 @@ import com.cycling.workitout.data.database.SavedWorkoutEntity
 import com.cycling.workitout.ui.home.toWorkoutDefinition
 import kotlin.math.roundToInt
 
-/**
- * Render an interval's target as either watts (`"180 W"`) or a percent of FTP
- * (`"90%"`), driven by the user's global display preference.
- */
+// Renders an interval target as watts or %FTP based on the global display toggle.
 internal fun formatTarget(interval: WorkoutIntervalDef, asPercent: Boolean): String =
     if (asPercent) "${(interval.targetPowerPercentFtp * 100).roundToInt()}%"
     else "${interval.targetPowerWatts} W"
@@ -439,10 +436,7 @@ private fun LibraryPreviewSheet(
     }
 }
 
-/**
- * W | % segmented chip. Single source of truth for the display toggle — used on
- * the library preview sheet, home preview sheet, and active workout screen.
- */
+// W | % segmented chip — shared by the library, home, and active workout screens.
 @Composable
 internal fun WattsPercentToggle(
     asPercent: Boolean,
