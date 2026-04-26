@@ -18,6 +18,12 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     private val _progress = MutableStateFlow(WorkoutProgress())
     val progress: StateFlow<WorkoutProgress> = _progress.asStateFlow()
 
+    // Append-only backing list — mutated under [backingLock] from the BLE callback thread.
+    // Public consumers see immutable snapshots through [recordedData], pushed at ~1Hz from
+    // the tick coroutine (and once more on stop/complete) so the UI doesn't churn the heap.
+    private val backing = ArrayList<RecordedDataPoint>(4096)
+    private val backingLock = Any()
+
     private val _recordedData = MutableStateFlow<List<RecordedDataPoint>>(emptyList())
     val recordedData: StateFlow<List<RecordedDataPoint>> = _recordedData.asStateFlow()
 
@@ -76,6 +82,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         cumulativeDistanceMeters = 0.0
         lastRecordedEpochMillis = 0L
         lastSummaryAtSecond = 0
+        synchronized(backingLock) { backing.clear() }
         _recordedData.value = emptyList()
         Timber.i("▶ Workout start: ${w.name} — ${w.intervals.size} intervals, ${w.totalDurationSeconds / 60}:${"%02d".format(w.totalDurationSeconds % 60)} total")
 
@@ -113,6 +120,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         tickJob = null
 
         _progress.value = _progress.value.copy(workoutState = WorkoutState.COMPLETED)
+        publishSnapshot()
         onWorkoutStopped?.invoke()
     }
 
@@ -145,9 +153,16 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             distanceMeters = cumulativeDistanceMeters.toFloat()
         )
 
-        val current = _recordedData.value.toMutableList()
-        current.add(point)
-        _recordedData.value = current
+        synchronized(backingLock) { backing.add(point) }
+    }
+
+    // Snapshot the backing list and push it to the public StateFlow. Cheap to call —
+    // ArrayList(other) is O(n) but only runs once per second instead of per BLE sample.
+    private fun publishSnapshot() {
+        val snapshot: List<RecordedDataPoint> = synchronized(backingLock) {
+            ArrayList(backing)
+        }
+        _recordedData.value = snapshot
     }
 
     private fun startTicking() {
@@ -175,6 +190,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
                 totalRemainingSeconds = 0,
                 intervalRemainingSeconds = 0
             )
+            publishSnapshot()
             logFinalSummary(w)
             onWorkoutStopped?.invoke()
             return
@@ -207,11 +223,17 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             logMinuteSummary(totalElapsed)
         }
 
+        publishSnapshot()
         updateProgress(totalElapsed)
     }
 
     private fun logMinuteSummary(totalElapsed: Int) {
-        val recent = _recordedData.value.takeLast(60)
+        // Read the last ~60 samples directly from the backing list — avoids depending on the
+        // throttled snapshot, which lags by up to 1s.
+        val recent: List<RecordedDataPoint> = synchronized(backingLock) {
+            if (backing.isEmpty()) emptyList()
+            else backing.subList((backing.size - 60).coerceAtLeast(0), backing.size).toList()
+        }
         if (recent.isEmpty()) return
         val avgPower = recent.map { it.actualPower }.average().toInt()
         val target = _progress.value.targetPowerWatts
@@ -222,7 +244,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     }
 
     private fun logFinalSummary(w: WorkoutDefinition) {
-        val all = _recordedData.value
+        val all: List<RecordedDataPoint> = synchronized(backingLock) { ArrayList(backing) }
         if (all.isEmpty()) {
             Timber.i("■ Workout complete (no samples recorded)")
             return
