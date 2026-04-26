@@ -31,6 +31,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     private var pausedElapsedSeconds: Int = 0
     private var currentIntervalIndex: Int = 0
     private var intervalStartTotalSeconds: Int = 0
+    private var lastSummaryAtSecond: Int = 0
 
     // Callbacks for the ViewModel to wire to BLE
     var onTargetPowerChanged: ((Int) -> Unit)? = null
@@ -74,7 +75,9 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         startTimeMillis = System.currentTimeMillis()
         cumulativeDistanceMeters = 0.0
         lastRecordedEpochMillis = 0L
+        lastSummaryAtSecond = 0
         _recordedData.value = emptyList()
+        Timber.i("▶ Workout start: ${w.name} — ${w.intervals.size} intervals, ${w.totalDurationSeconds / 60}:${"%02d".format(w.totalDurationSeconds % 60)} total")
 
         val firstInterval = w.intervals.first()
         onWorkoutStarted?.invoke()
@@ -172,8 +175,8 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
                 totalRemainingSeconds = 0,
                 intervalRemainingSeconds = 0
             )
+            logFinalSummary(w)
             onWorkoutStopped?.invoke()
-            Timber.d("Workout completed!")
             return
         }
 
@@ -196,10 +199,66 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
 
             val newInterval = w.intervals[currentIntervalIndex]
             onTargetPowerChanged?.invoke(newInterval.targetPowerWatts)
-            Timber.d("Interval changed to: ${newInterval.name} (${newInterval.targetPowerWatts}W)")
+            Timber.i("→ Interval ${currentIntervalIndex + 1}/${w.intervals.size}: ${newInterval.name} @ ${newInterval.targetPowerWatts}W (${newInterval.durationSeconds}s) [${fmtClock(totalElapsed)}]")
+        }
+
+        if (totalElapsed - lastSummaryAtSecond >= 60) {
+            lastSummaryAtSecond = totalElapsed
+            logMinuteSummary(totalElapsed)
         }
 
         updateProgress(totalElapsed)
+    }
+
+    private fun logMinuteSummary(totalElapsed: Int) {
+        val recent = _recordedData.value.takeLast(60)
+        if (recent.isEmpty()) return
+        val avgPower = recent.map { it.actualPower }.average().toInt()
+        val target = _progress.value.targetPowerWatts
+        val avgHr = recent.mapNotNull { it.heartRate.takeIf { hr -> hr > 0 } }.average().let { if (it.isNaN()) 0 else it.toInt() }
+        val avgCad = recent.mapNotNull { it.cadence.takeIf { c -> c > 0 } }.average().let { if (it.isNaN()) 0 else it.toInt() }
+        val intervalName = _progress.value.currentIntervalName
+        Timber.i("⏱ ${fmtClock(totalElapsed)} [$intervalName] target=${target}W actual=${avgPower}W hr=${avgHr} cad=${avgCad}")
+    }
+
+    private fun logFinalSummary(w: WorkoutDefinition) {
+        val all = _recordedData.value
+        if (all.isEmpty()) {
+            Timber.i("■ Workout complete (no samples recorded)")
+            return
+        }
+        val powers = all.map { it.actualPower }.filter { it > 0 }
+        val hrs = all.map { it.heartRate }.filter { it > 0 }
+        val cads = all.map { it.cadence }.filter { it > 0 }
+        val distance = all.last().distanceMeters
+
+        Timber.i("■ Workout complete: ${w.name}")
+        Timber.i("   duration=${fmtClock(w.totalDurationSeconds)} samples=${all.size} distance=${"%.2f".format(distance / 1000f)}km")
+        if (powers.isNotEmpty()) {
+            Timber.i("   power: avg=${powers.average().toInt()}W max=${powers.max()}W")
+        }
+        if (hrs.isNotEmpty()) {
+            Timber.i("   hr: avg=${hrs.average().toInt()} max=${hrs.max()}")
+        }
+        if (cads.isNotEmpty()) {
+            Timber.i("   cadence: avg=${cads.average().toInt()} max=${cads.max()}")
+        }
+
+        var cursor = 0
+        for ((idx, interval) in w.intervals.withIndex()) {
+            val endSec = cursor + interval.durationSeconds
+            val slice = all.filter { it.timeSeconds in cursor until endSec }
+            val sliceAvgP = slice.map { it.actualPower }.filter { it > 0 }.average().let { if (it.isNaN()) 0 else it.toInt() }
+            val sliceAvgH = slice.map { it.heartRate }.filter { it > 0 }.average().let { if (it.isNaN()) 0 else it.toInt() }
+            Timber.i("   #${idx + 1} ${interval.name}: target=${interval.targetPowerWatts}W actual=${sliceAvgP}W hr=$sliceAvgH (${interval.durationSeconds}s)")
+            cursor = endSec
+        }
+    }
+
+    private fun fmtClock(seconds: Int): String {
+        val m = seconds / 60
+        val s = seconds % 60
+        return "%d:%02d".format(m, s)
     }
 
     private fun updateProgress(totalElapsed: Int) {

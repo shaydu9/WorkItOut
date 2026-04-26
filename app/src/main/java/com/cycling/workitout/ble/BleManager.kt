@@ -92,17 +92,17 @@ class BleManager(private val context: Context) {
     private val FEC_BURST_DURATION_MS = 3_000L
     @Volatile private var fecBurstUntilMs: Long = 0L
 
-    // High-frequency logs are gated here — only useful during an active ride.
+    // setWorkoutActive is kept for symmetry with the WorkoutEngine lifecycle, but per-sample
+    // BLE callbacks no longer log — they fire several times per second per sensor and drown
+    // out everything else. Power, HR and cadence still flow through the StateFlows; only the
+    // Timber spam is gone. Connection lifecycle, errors, and target writes still log normally.
     private val _workoutActive = MutableStateFlow(false)
     fun setWorkoutActive(active: Boolean) {
         if (_workoutActive.value == active) return
         _workoutActive.value = active
-        Timber.i(if (active) "Workout started — verbose BLE logging ON"
-                  else         "Workout stopped — verbose BLE logging OFF")
     }
-    private inline fun sampleLog(block: () -> String) {
-        if (_workoutActive.value) Timber.d(block())
-    }
+    @Suppress("UNUSED_PARAMETER")
+    private inline fun sampleLog(block: () -> String) { /* no-op */ }
 
     init {
         bleScope.launch {
