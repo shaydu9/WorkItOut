@@ -69,7 +69,8 @@ class HistoryStravaUploader(
                     WorkoutExporter.exportFromHistory(appContext, ride, weight)
                 }
 
-                val activityId = stravaRepository.uploadFitForHistory(fitFile, ride.name)
+                val description = StravaActivityDescription.from(ride)
+                val activityId = stravaRepository.uploadFitForHistory(fitFile, ride.name, description)
                 rideDao.markStravaUploaded(
                     rideId = rideId,
                     activityId = activityId,

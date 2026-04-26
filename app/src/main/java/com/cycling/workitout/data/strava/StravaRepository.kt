@@ -121,8 +121,12 @@ class StravaRepository(context: Context) {
      * past ride" feature owns its own per-ride state and just needs the activity
      * id back so it can stamp the database row.
      */
-    suspend fun uploadFitForHistory(file: File, workoutName: String): Long {
+    suspend fun uploadFitForHistory(
+        file: File,
+        workoutName: String,
+        description: String
+    ): Long {
         if (!tokens.hasTokens) throw IllegalStateException("Strava not connected")
-        return client.uploadFit(file, workoutName)
+        return client.uploadFit(file, workoutName, description)
     }
 }
