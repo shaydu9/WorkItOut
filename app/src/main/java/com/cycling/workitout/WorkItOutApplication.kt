@@ -44,5 +44,8 @@ class WorkItOutApplication : Application() {
             stravaRepository = stravaRepository,
             themePreferences = themePreferences
         )
+
+        val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+        Timber.i("Firebase ready: project=${com.google.firebase.FirebaseApp.getInstance().options.projectId}, currentUser=${auth.currentUser?.uid ?: "null"}")
     }
 }

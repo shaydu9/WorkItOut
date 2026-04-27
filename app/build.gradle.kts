@@ -6,6 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
 }
 
 val localProperties = Properties().apply {
@@ -96,6 +97,7 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     
     // Room Database
     implementation("androidx.room:room-runtime:2.6.1")
@@ -130,6 +132,13 @@ dependencies {
     implementation("com.patrykandpatrick.vico:compose:2.0.0-alpha.28")
     implementation("com.patrykandpatrick.vico:compose-m3:2.0.0-alpha.28")
     implementation("com.patrykandpatrick.vico:core:2.0.0-alpha.28")
+
+    // Firebase BoM manages versions for all firebase-* libraries below.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+
+    // Auth = login/signup. Firestore = our cloud database.
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

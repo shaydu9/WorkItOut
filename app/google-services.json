@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "596435170722",
+    "project_id": "workitout-7cce5",
+    "storage_bucket": "workitout-7cce5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:596435170722:android:958d1801e0bdf2ffde6efb",
+        "android_client_info": {
+          "package_name": "com.cycling.workitout"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0BtIlXDQCJE1ZOzpWNbGA7oXrxzkL0eM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
