@@ -54,7 +54,7 @@ class LoginViewModel(
     }
 
     fun submit() {
-        val state = uiState.value
+        val state = _uiState.value
         if (!state.canSubmit) return
 
         _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
@@ -94,7 +94,7 @@ class LoginViewModel(
         _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
 
         viewModelScope.launch {
-            val result = authRepository.signInAnonymously()
+            authRepository.signInAnonymously()
                 .onSuccess { user ->
                     Timber.i("Anonymous sign-in success: uid=${user.uid}")
                     _uiState.update { it.copy(isSubmitting = false) }
