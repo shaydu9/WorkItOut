@@ -1,6 +1,7 @@
 package com.cycling.workitout
 
 import android.app.Application
+import com.cycling.workitout.data.auth.AuthRepository
 import com.cycling.workitout.data.database.WorkItOutDatabase
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.repository.DeviceRepository
@@ -13,6 +14,9 @@ class WorkItOutApplication : Application() {
 
     companion object {
         lateinit var database: WorkItOutDatabase
+            private set
+
+        lateinit var authRepository: AuthRepository
             private set
 
         lateinit var deviceRepository: DeviceRepository
@@ -35,6 +39,7 @@ class WorkItOutApplication : Application() {
         Timber.i("🚴 WorkItOut application started")
 
         database = WorkItOutDatabase.getDatabase(applicationContext)
+        authRepository = AuthRepository()
         deviceRepository = DeviceRepository(database.savedDeviceDao())
         themePreferences = ThemePreferences(applicationContext)
         stravaRepository = StravaRepository(applicationContext)
@@ -45,7 +50,6 @@ class WorkItOutApplication : Application() {
             themePreferences = themePreferences
         )
 
-        val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
-        Timber.i("Firebase ready: project=${com.google.firebase.FirebaseApp.getInstance().options.projectId}, currentUser=${auth.currentUser?.uid ?: "null"}")
+        Timber.i("Auth ready: currentUser=${authRepository.currentUser.value}")
     }
 }
