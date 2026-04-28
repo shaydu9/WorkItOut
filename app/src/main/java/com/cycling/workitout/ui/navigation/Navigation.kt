@@ -15,6 +15,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.WorkoutDefinition
+import com.cycling.workitout.ui.auth.LoginScreen
+import com.cycling.workitout.ui.auth.LoginViewModel
 import com.cycling.workitout.ui.firstrun.FirstRunPairingScreen
 import com.cycling.workitout.ui.firstrun.FirstRunPairingViewModel
 import com.cycling.workitout.ui.history.HistoryScreen
@@ -51,6 +53,15 @@ object WorkoutSession {
 fun WorkItOutNavigation(bleManager: BleManager) {
     val navController = rememberNavController()
     val prefs = WorkItOutApplication.themePreferences
+
+    val authRepository = WorkItOutApplication.authRepository
+    val currentUser by authRepository.currentUser.collectAsStateWithLifecycle()
+
+    if (currentUser == null) {
+        val loginViewModel = remember { LoginViewModel(authRepository) }
+        LoginScreen(viewModel = loginViewModel)
+        return
+    }
 
     var startDestination by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
