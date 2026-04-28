@@ -10,6 +10,7 @@ import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
+import com.cycling.workitout.data.WorkoutState
 import com.cycling.workitout.data.database.CompletedRideEntity
 import com.cycling.workitout.data.export.WorkoutExporter
 import com.cycling.workitout.data.preferences.ThemePreferences
@@ -26,8 +27,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -93,6 +96,17 @@ class WorkoutViewModel(
     private val _ergEnabled = MutableStateFlow(true)
     val ergEnabled: StateFlow<Boolean> = _ergEnabled.asStateFlow()
 
+    // True for ~1.5s while the watchdog auto-rearms ERG; UI shows a transient "Re-arming…" hint.
+    private val _ergRearming = MutableStateFlow(false)
+    val ergRearming: StateFlow<Boolean> = _ergRearming.asStateFlow()
+
+    // Wall-clock of last interval transition — watchdog suppresses near boundaries while the
+    // trainer ramps to the new target.
+    @Volatile private var lastIntervalTransitionMs: Long = 0L
+
+    // Sliding window of recent re-arm timestamps — caps the watchdog at MAX_REARMS_PER_30S.
+    private val rearmTimestamps = ArrayDeque<Long>()
+
     // Countdown state: wait for first pedal → count 5..1 → start. Gives the trainer time to latch ERG.
     sealed class StartupState {
         object Idle : StartupState()
@@ -143,6 +157,7 @@ class WorkoutViewModel(
 
         // Wire engine callbacks to BLE — gated by ERG toggle.
         workoutEngine.onTargetPowerChanged = { watts ->
+            lastIntervalTransitionMs = System.currentTimeMillis()
             if (bleManager.isDemoMode.value) {
                 bleManager.setDemoTargetPower(watts)
             } else if (_ergEnabled.value) {
@@ -196,6 +211,10 @@ class WorkoutViewModel(
                 workoutEngine.start()
             }
         }
+
+        // ERG watchdog — runs for the lifetime of the VM, only acts while a workout is RUNNING
+        // and ERG is enabled. Cheap (1 Hz tick reading already-cached StateFlow values).
+        viewModelScope.launch { runErgWatchdog() }
     }
 
     fun startWorkout() {
@@ -348,6 +367,93 @@ class WorkoutViewModel(
                 }
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to save ride to history")
+            }
+        }
+    }
+
+    // ERG watchdog: detects "trainer locked to wrong target" (Mode A) and "trainer dropped to
+    // freewheel" (Mode B). On confirmed deviation, fires the same off→on cycle the rider would
+    // do manually — that's known-good and produces a fresh burst of Page 49 frames at 3 Hz.
+    //
+    // Tunables are conservative on purpose: we'd rather miss the first second of a real drop
+    // than auto-rearm on a sprint or an interval-edge ramp.
+    private suspend fun runErgWatchdog() {
+        val deviationFraction = 0.20            // ±20% off target counts as deviation
+        val sustainedSeconds = 2                // need 2 consecutive seconds before firing
+        val transitionSuppressMs = 5_000L       // skip the trainer's own ramp after each interval
+        val minCadence = 30                     // ignore coast/stop seconds
+        val rearmCooldownMs = 5_000L            // don't rearm again until at least this elapsed
+        val maxRearmsPer30s = 3                 // back off if we keep firing — likely a real fault
+
+        var consecutiveDeviationSec = 0
+        var lastRearmMs = 0L
+
+        while (true) {
+            delay(1_000L)
+
+            if (bleManager.isDemoMode.value) { consecutiveDeviationSec = 0; continue }
+            if (!_ergEnabled.value) { consecutiveDeviationSec = 0; continue }
+            if (workoutEngine.progress.value.workoutState != WorkoutState.RUNNING) {
+                consecutiveDeviationSec = 0; continue
+            }
+
+            val now = System.currentTimeMillis()
+            if (now - lastIntervalTransitionMs < transitionSuppressMs) {
+                consecutiveDeviationSec = 0; continue
+            }
+
+            val target = workoutEngine.progress.value.targetPowerWatts
+            if (target <= 0) { consecutiveDeviationSec = 0; continue }
+
+            val live = bleManager.powerData.value
+            if (live.cadence < minCadence) { consecutiveDeviationSec = 0; continue }
+
+            val deviation = abs(live.power - target).toDouble() / target.toDouble()
+            if (deviation <= deviationFraction) {
+                consecutiveDeviationSec = 0
+                continue
+            }
+
+            consecutiveDeviationSec++
+            if (consecutiveDeviationSec < sustainedSeconds) continue
+
+            if (now - lastRearmMs < rearmCooldownMs) continue
+
+            // Rate limit: drop expired entries, bail if still over budget.
+            while (rearmTimestamps.isNotEmpty() && now - rearmTimestamps.first() > 30_000L) {
+                rearmTimestamps.removeFirst()
+            }
+            if (rearmTimestamps.size >= maxRearmsPer30s) {
+                Timber.w("ERG watchdog: over budget ($maxRearmsPer30s rearms in 30s) — backing off")
+                consecutiveDeviationSec = 0
+                continue
+            }
+
+            Timber.w("ERG watchdog: actual=${live.power}W target=${target}W (${(deviation * 100).toInt()}% off, ${consecutiveDeviationSec}s) — auto-rearming")
+            rearmTimestamps.addLast(now)
+            lastRearmMs = now
+            consecutiveDeviationSec = 0
+            rearmErg(target)
+        }
+    }
+
+    // The toggle off→on cycle the rider would do by hand. For FE-C this is:
+    //   stopFtmsWorkout()  → sends Page 49 target=0W, stops resender
+    //   delay 250ms        → trainer registers the stop
+    //   setTargetPower()   → fresh Page 49 with the current target, restarts 3 Hz resender
+    private fun rearmErg(targetWatts: Int) {
+        viewModelScope.launch {
+            _ergRearming.value = true
+            try {
+                bleManager.stopFtmsWorkout()
+                delay(250L)
+                bleManager.requestFtmsControl()
+                bleManager.startFtmsWorkout()
+                bleManager.setTargetPower(targetWatts)
+                // Keep the UI hint up for a moment so the rider sees the app handled it.
+                delay(1_500L)
+            } finally {
+                _ergRearming.value = false
             }
         }
     }

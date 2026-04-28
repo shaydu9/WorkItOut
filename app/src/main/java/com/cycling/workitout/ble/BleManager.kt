@@ -80,17 +80,22 @@ class BleManager(private val context: Context) {
     private val mockDataGenerator = MockDataGenerator(mockDataScope)
 
     // BLE allows only one in-flight write at a time — all control writes go through this queue.
+    // Conflated: if the consumer is mid-write and another frame is queued, only the LATEST is kept.
+    // This stops resends from piling up if the trainer's BLE radio briefly stalls.
     private val bleScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val controlWriteQueue = Channel<ByteArray>(capacity = Channel.UNLIMITED)
+    private val controlWriteQueue = Channel<ByteArray>(capacity = Channel.CONFLATED)
     private var pendingWriteAck: CompletableDeferred<Boolean>? = null
 
-    // FE-C needs periodic resends to keep ERG locked — re-send at 1 Hz (3 Hz burst on target changes).
+    // FE-C: trainer drops ERG if it doesn't see Page 49 for ~4-5s, so we resend at 3 Hz steady.
+    // At 333ms cadence even ~10 consecutive frame drops stays under the trainer's tolerance.
     private var currentFecTargetWatts: Int? = null
     private var fecResendJob: kotlinx.coroutines.Job? = null
-    private val FEC_RESEND_INTERVAL_MS = 1_000L
-    private val FEC_BURST_INTERVAL_MS = 300L
-    private val FEC_BURST_DURATION_MS = 3_000L
-    @Volatile private var fecBurstUntilMs: Long = 0L
+    private val FEC_RESEND_INTERVAL_MS = 333L
+
+    // FE-C write health counters for the periodic diagnostic line.
+    @Volatile private var fecWriteOkCount = 0
+    @Volatile private var fecWriteFailCount = 0
+    private var fecHealthJob: kotlinx.coroutines.Job? = null
 
     // setWorkoutActive is kept for symmetry with the WorkoutEngine lifecycle, but per-sample
     // BLE callbacks no longer log — they fire several times per second per sensor and drown
@@ -383,13 +388,11 @@ class BleManager(private val context: Context) {
                 Timber.d("FTMS setTargetPower: $watts W")
             }
             ControlMode.FEC -> {
+                currentFecTargetWatts = watts
                 val frame = TacxFecClient.buildTargetPowerFrame(watts)
                 enqueueControlWrite(frame)
-                currentFecTargetWatts = watts
-                // Burst window: resend at 3 Hz for a few seconds so the trainer latches faster.
-                fecBurstUntilMs = System.currentTimeMillis() + FEC_BURST_DURATION_MS
                 ensureFecResender()
-                Timber.d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B) — burst for ${FEC_BURST_DURATION_MS}ms")
+                Timber.d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B) — steady 3 Hz")
             }
             ControlMode.NONE -> Timber.w("setTargetPower($watts) dropped — no control mode")
         }
@@ -437,46 +440,59 @@ class BleManager(private val context: Context) {
         pendingWriteAck = null
     }
 
-    // Keeps sending the last target so the trainer stays locked — burst=3 Hz, steady=1 Hz.
+    // Keeps sending the last target so the trainer stays locked — steady 3 Hz.
+    // Conflated queue means resend frames silently drop if the consumer is still draining.
     private fun ensureFecResender() {
         if (fecResendJob?.isActive == true) return
         fecResendJob = bleScope.launch {
             while (_controlMode.value == ControlMode.FEC) {
-                val now = System.currentTimeMillis()
-                val interval = if (now < fecBurstUntilMs) FEC_BURST_INTERVAL_MS else FEC_RESEND_INTERVAL_MS
-                kotlinx.coroutines.delay(interval)
+                kotlinx.coroutines.delay(FEC_RESEND_INTERVAL_MS)
                 val target = currentFecTargetWatts ?: continue
                 if (fecWriteChar == null || trainerGatt == null) break
                 val frame = TacxFecClient.buildTargetPowerFrame(target)
                 controlWriteQueue.trySend(frame)
-                sampleLog { "TacxFec resend: $target W (interval=${interval}ms)" }
             }
         }
+        ensureFecHealthLogger()
     }
 
     private fun stopFecResender() {
         fecResendJob?.cancel()
         fecResendJob = null
+        fecHealthJob?.cancel()
+        fecHealthJob = null
     }
 
-    // Write-with-response so the trainer ACKs — gives us flow control for free.
+    // 30s health summary so we have evidence in the log if writes start failing.
+    private fun ensureFecHealthLogger() {
+        if (fecHealthJob?.isActive == true) return
+        fecHealthJob = bleScope.launch {
+            var prevOk = 0
+            var prevFail = 0
+            while (_controlMode.value == ControlMode.FEC) {
+                kotlinx.coroutines.delay(30_000L)
+                val ok = fecWriteOkCount
+                val fail = fecWriteFailCount
+                val dOk = ok - prevOk
+                val dFail = fail - prevFail
+                prevOk = ok; prevFail = fail
+                Timber.i("FE-C health (30s): writes ok=$dOk fail=$dFail target=${currentFecTargetWatts}W")
+            }
+        }
+    }
+
+    // Write-without-response: ANT+ Page 49 is fire-and-forget by design, and the BLE-layer ACK
+    // we used to await was the cause of the head-of-line stall that caused mid-workout ERG drops.
+    // No-response writes complete in ~ms; if the BLE stack is full, writeCharacteristic returns
+    // false and we rely on the next 333ms resend tick to retry.
     @SuppressLint("MissingPermission")
     private suspend fun doFecWrite(data: ByteArray) {
         val char = fecWriteChar ?: return
         val gatt = trainerGatt ?: return
-        val ack = CompletableDeferred<Boolean>()
-        pendingWriteAck = ack
-        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         char.value = data
         val queued = gatt.writeCharacteristic(char)
-        if (!queued) {
-            Timber.w("FE-C writeCharacteristic returned false")
-            pendingWriteAck = null
-            return
-        }
-        val result = withTimeoutOrNull(2_000) { ack.await() } ?: false
-        sampleLog { "FE-C write ACK=$result (${data.size}B)" }
-        pendingWriteAck = null
+        if (queued) fecWriteOkCount++ else fecWriteFailCount++
     }
 
     fun setPowerSmoothingWindow(seconds: Int) {
@@ -656,6 +672,11 @@ class BleManager(private val context: Context) {
                     _isPowerMeterConnected.value = false
                     _trainerControlAvailable.value = false
                     ftmsControlPointChar = null
+                    fecWriteChar = null
+                    stopFecResender()
+                    _controlMode.value = ControlMode.NONE
+                    // currentFecTargetWatts intentionally retained: if reconnect happens during a
+                    // workout, the VM's onTargetPowerChanged hook re-pushes the right value.
                 }
             }
         }
@@ -749,17 +770,11 @@ class BleManager(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
-            when (characteristic.uuid) {
-                BleConstants.FTMS_CONTROL_POINT_CHAR_UUID -> {
-                    val success = status == BluetoothGatt.GATT_SUCCESS
-                    sampleLog { "FTMS onCharacteristicWrite status=$status success=$success" }
-                    pendingWriteAck?.complete(success)
-                }
-                BleConstants.TACX_FEC_WRITE_CHAR_UUID -> {
-                    val success = status == BluetoothGatt.GATT_SUCCESS
-                    sampleLog { "FE-C onCharacteristicWrite status=$status success=$success" }
-                    pendingWriteAck?.complete(success)
-                }
+            // FE-C uses WRITE_TYPE_NO_RESPONSE so this callback only fires for FTMS now.
+            if (characteristic.uuid == BleConstants.FTMS_CONTROL_POINT_CHAR_UUID) {
+                val success = status == BluetoothGatt.GATT_SUCCESS
+                sampleLog { "FTMS onCharacteristicWrite status=$status success=$success" }
+                pendingWriteAck?.complete(success)
             }
         }
 

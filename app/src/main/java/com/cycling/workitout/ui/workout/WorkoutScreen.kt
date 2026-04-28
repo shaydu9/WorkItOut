@@ -32,6 +32,7 @@ fun WorkoutScreen(
     val metrics by viewModel.liveMetrics.collectAsStateWithLifecycle()
     val recordedData by viewModel.recordedData.collectAsStateWithLifecycle()
     val ergEnabled by viewModel.ergEnabled.collectAsStateWithLifecycle()
+    val ergRearming by viewModel.ergRearming.collectAsStateWithLifecycle()
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
     val currentFtp by viewModel.currentFtp.collectAsStateWithLifecycle()
     val startupState by viewModel.startupState.collectAsStateWithLifecycle()
@@ -135,6 +136,7 @@ fun WorkoutScreen(
 
                 ErgToggleRow(
                     ergEnabled = ergEnabled,
+                    ergRearming = ergRearming,
                     onErgChange = viewModel::setErgEnabled,
                     displayAsPercent = displayAsPercent,
                     onDisplayChange = viewModel::setDisplayAsPercent
@@ -404,6 +406,7 @@ private fun StatCell(
 @Composable
 private fun ErgToggleRow(
     ergEnabled: Boolean,
+    ergRearming: Boolean = false,
     onErgChange: (Boolean) -> Unit,
     displayAsPercent: Boolean,
     onDisplayChange: (Boolean) -> Unit
@@ -415,15 +418,21 @@ private fun ErgToggleRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "ERG MODE",
+                text = if (ergRearming) "ERG MODE · RE-ARMING…" else "ERG MODE",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (ergEnabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
+                color = when {
+                    ergRearming -> MaterialTheme.colorScheme.tertiary
+                    ergEnabled -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             Text(
-                text = if (ergEnabled) "Trainer locks to target power"
-                else "Free ride · timer continues",
+                text = when {
+                    ergRearming -> "Re-locking trainer to target"
+                    ergEnabled -> "Trainer locks to target power"
+                    else -> "Free ride · timer continues"
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
