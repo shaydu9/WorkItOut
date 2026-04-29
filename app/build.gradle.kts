@@ -13,7 +13,6 @@ val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) load(f.inputStream())
 }
-val anthropicApiKey: String = localProperties.getProperty("ANTHROPIC_API_KEY", "")
 val stravaClientId: String = localProperties.getProperty("STRAVA_CLIENT_ID", "")
 val stravaClientSecret: String = localProperties.getProperty("STRAVA_CLIENT_SECRET", "")
 
@@ -37,7 +36,6 @@ android {
             useSupportLibrary = true
         }
 
-        buildConfigField("String", "ANTHROPIC_API_KEY", "\"$anthropicApiKey\"")
         buildConfigField("String", "STRAVA_CLIENT_ID", "\"$stravaClientId\"")
         buildConfigField("String", "STRAVA_CLIENT_SECRET", "\"$stravaClientSecret\"")
     }

@@ -8,6 +8,6 @@ import retrofit2.http.POST
 interface AnthropicApi {
 
     // Throws HttpException on non-2xx after retries are exhausted.
-    @POST("v1/messages")
+    @POST("anthropicMessages")
     suspend fun createMessage(@Body request: MessagesRequest): MessagesResponse
 }

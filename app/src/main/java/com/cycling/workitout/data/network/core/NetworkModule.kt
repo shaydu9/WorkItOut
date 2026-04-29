@@ -45,24 +45,15 @@ object NetworkModule {
 
     val anthropicApi: AnthropicApi by lazy {
         val client = sharedClient.newBuilder()
-            .addInterceptor(AnthropicAuthInterceptor(apiKeyProvider = ::readAnthropicKey))
+            .addInterceptor(AnthropicAuthInterceptor())
             .build()
 
         Retrofit.Builder()
-            .baseUrl("https://api.anthropic.com/")
+            .baseUrl("https://us-central1-workitout-7cce5.cloudfunctions.net/")
             .client(client)
             .addConverterFactory(jsonConverter)
             .build()
             .create(AnthropicApi::class.java)
-    }
-
-    // Read via reflection so incremental builds pick up local.properties changes without a clean.
-    private fun readAnthropicKey(): String = try {
-        val cls = Class.forName("com.cycling.workitout.BuildConfig")
-        cls.getField("ANTHROPIC_API_KEY").get(null) as? String ?: ""
-    } catch (t: Throwable) {
-        Timber.e(t, "Failed to read ANTHROPIC_API_KEY from BuildConfig")
-        ""
     }
 
     // Lambda breaks the circular dep: Authenticator needs the API, but API isn't built yet.
