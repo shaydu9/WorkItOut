@@ -23,7 +23,11 @@ class AuthRepository(
         }
         firebaseAuth.addAuthStateListener(listener)
         awaitClose { firebaseAuth.removeAuthStateListener(listener) }
-    }.stateIn(scope, SharingStarted.Eagerly, firebaseAuth.currentUser?.toAuthUser())
+    }.stateIn(
+        scope,
+        SharingStarted.Eagerly,
+        firebaseAuth.currentUser?.toAuthUser()
+    )
 
     suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> = runCatching {
         val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()

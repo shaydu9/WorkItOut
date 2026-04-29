@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,20 +26,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onRepairDevices: () -> Unit
 ) {
-    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val powerSmoothingSeconds by viewModel.powerSmoothingSeconds.collectAsStateWithLifecycle()
-    val ftp by viewModel.ftp.collectAsStateWithLifecycle()
-    val weightKg by viewModel.weightKg.collectAsStateWithLifecycle()
-    val maxHeartRate by viewModel.maxHeartRate.collectAsStateWithLifecycle()
-    val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
-    val stravaAthleteName by viewModel.stravaAthleteName.collectAsStateWithLifecycle()
-    val autoUploadToStrava by viewModel.autoUploadToStravaOnFinish.collectAsStateWithLifecycle()
-    var showThemeDialog by remember { mutableStateOf(false) }
-    var showPowerSmoothingDialog by remember { mutableStateOf(false) }
-    var showFtpDialog by remember { mutableStateOf(false) }
-    var showWeightDialog by remember { mutableStateOf(false) }
-    var showMaxHrDialog by remember { mutableStateOf(false) }
-    var showDisconnectStravaDialog by remember { mutableStateOf(false) }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Scaffold(
@@ -52,216 +41,313 @@ fun SettingsScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                SectionHeader("Training")
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.FitnessCenter,
-                    title = "FTP",
-                    subtitle = "${ftp}W",
-                    onClick = { showFtpDialog = true }
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.MonitorWeight,
-                    title = "Weight",
-                    subtitle = "${weightKg} kg",
-                    onClick = { showWeightDialog = true }
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Favorite,
-                    title = "Max Heart Rate",
-                    subtitle = "${maxHeartRate} bpm",
-                    onClick = { showMaxHrDialog = true }
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.ShowChart,
-                    title = "Power Averaging",
-                    subtitle = "${powerSmoothingSeconds}s average",
-                    onClick = { showPowerSmoothingDialog = true }
-                )
-            }
+        SettingsScreenContent(
+            state = state,
+            onSetFtp = viewModel::setFtp,
+            onSetWeight = viewModel::setWeightKg,
+            onSetMaxHr = viewModel::setMaxHeartRate,
+            onSetPowerSmoothing = viewModel::setPowerSmoothingSeconds,
+            onSetThemeMode = viewModel::setThemeMode,
+            onConnectStrava = { viewModel.connectStrava(context) },
+            onDisconnectStrava = viewModel::disconnectStrava,
+            onSetAutoUploadToStrava = viewModel::setAutoUploadToStravaOnFinish,
+            onSignOut = viewModel::signOut,
+            onRepairDevices = {
+                viewModel.resetFirstRun()
+                onRepairDevices()
+            },
+            modifier = Modifier.padding(paddingValues)
+        )
+    }
+}
 
-            item {
-                Spacer(Modifier.height(16.dp))
-                SectionHeader("Devices")
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Bluetooth,
-                    title = "Re-pair devices",
-                    subtitle = "Run the pairing flow again",
-                    onClick = {
-                        viewModel.resetFirstRun()
-                        onRepairDevices()
-                    }
-                )
-            }
+@Composable
+private fun SettingsScreenContent(
+    state: SettingsUiState,
+    onSetFtp: (Int) -> Unit,
+    onSetWeight: (Int) -> Unit,
+    onSetMaxHr: (Int) -> Unit,
+    onSetPowerSmoothing: (Int) -> Unit,
+    onSetThemeMode: (ThemeMode) -> Unit,
+    onConnectStrava: () -> Unit,
+    onDisconnectStrava: () -> Unit,
+    onSetAutoUploadToStrava: (Boolean) -> Unit,
+    onSignOut: () -> Unit,
+    onRepairDevices: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var showPowerSmoothingDialog by remember { mutableStateOf(false) }
+    var showFtpDialog by remember { mutableStateOf(false) }
+    var showWeightDialog by remember { mutableStateOf(false) }
+    var showMaxHrDialog by remember { mutableStateOf(false) }
+    var showDisconnectStravaDialog by remember { mutableStateOf(false) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
 
-            item {
-                Spacer(Modifier.height(16.dp))
-                SectionHeader("Integrations")
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.CloudUpload,
-                    title = "Strava",
-                    subtitle = if (stravaConnected) {
-                        "Connected${stravaAthleteName?.let { " as $it" } ?: ""}"
-                    } else {
-                        "Not connected — tap to sign in"
-                    },
-                    iconTint = Color(0xFFFC4C02), // Strava orange
-                    onClick = {
-                        if (stravaConnected) showDisconnectStravaDialog = true
-                        else viewModel.connectStrava(context)
-                    }
-                )
-            }
-            if (stravaConnected) {
-                item {
-                    SettingsToggleItem(
-                        icon = Icons.Default.CloudSync,
-                        title = "Auto-upload to Strava",
-                        subtitle = "Send rides to Strava as soon as you finish",
-                        iconTint = Color(0xFFFC4C02),
-                        checked = autoUploadToStrava,
-                        onCheckedChange = { viewModel.setAutoUploadToStravaOnFinish(it) }
-                    )
-                }
-            }
-
-            item {
-                Spacer(Modifier.height(16.dp))
-                SectionHeader("Display")
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Brightness4,
-                    title = "Theme",
-                    subtitle = when (themeMode) {
-                        ThemeMode.LIGHT -> "Light"
-                        ThemeMode.DARK -> "Dark"
-                        ThemeMode.SYSTEM -> "System default"
-                    },
-                    onClick = { showThemeDialog = true }
-                )
-            }
-
-            item {
-                Spacer(Modifier.height(16.dp))
-                SectionHeader("About")
-            }
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "WorkItOut",
-                    subtitle = "Version 1.0.0",
-                    onClick = { }
-                )
-            }
-        }
-
-        if (showThemeDialog) {
-            ThemeSelectionDialog(
-                currentTheme = themeMode,
-                onDismiss = { showThemeDialog = false },
-                onThemeSelected = { mode ->
-                    viewModel.setThemeMode(mode)
-                    showThemeDialog = false
-                }
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item { SectionHeader("Training") }
+        item {
+            SettingsItem(
+                icon = Icons.Default.FitnessCenter,
+                title = "FTP",
+                subtitle = "${state.ftp}W",
+                onClick = { showFtpDialog = true }
             )
         }
-
-        if (showPowerSmoothingDialog) {
-            PowerSmoothingDialog(
-                currentSeconds = powerSmoothingSeconds,
-                onDismiss = { showPowerSmoothingDialog = false },
-                onSecondsSelected = { seconds ->
-                    viewModel.setPowerSmoothingSeconds(seconds)
-                    showPowerSmoothingDialog = false
-                }
+        item {
+            SettingsItem(
+                icon = Icons.Default.MonitorWeight,
+                title = "Weight",
+                subtitle = "${state.weightKg} kg",
+                onClick = { showWeightDialog = true }
             )
         }
-
-        if (showFtpDialog) {
-            FtpDialog(
-                currentFtp = ftp,
-                onDismiss = { showFtpDialog = false },
-                onFtpSelected = { watts ->
-                    viewModel.setFtp(watts)
-                    showFtpDialog = false
-                }
-            )
-        }
-
-        if (showWeightDialog) {
-            NumericValueDialog(
-                title = "Body weight",
-                description = "Used with your power output to compute virtual speed and distance for Strava.",
-                currentValue = weightKg,
-                unit = "kg",
-                range = 30..200,
-                onDismiss = { showWeightDialog = false },
-                onValueSelected = { kg ->
-                    viewModel.setWeightKg(kg)
-                    showWeightDialog = false
-                }
-            )
-        }
-
-        if (showMaxHrDialog) {
-            NumericValueDialog(
+        item {
+            SettingsItem(
+                icon = Icons.Default.Favorite,
                 title = "Max Heart Rate",
-                description = "Your maximum heart rate. Used to compute %HRmax training zones.",
-                currentValue = maxHeartRate,
-                unit = "bpm",
-                range = 120..230,
-                onDismiss = { showMaxHrDialog = false },
-                onValueSelected = { bpm ->
-                    viewModel.setMaxHeartRate(bpm)
-                    showMaxHrDialog = false
-                }
+                subtitle = "${state.maxHeartRate} bpm",
+                onClick = { showMaxHrDialog = true }
+            )
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.ShowChart,
+                title = "Power Averaging",
+                subtitle = "${state.powerSmoothingSeconds}s average",
+                onClick = { showPowerSmoothingDialog = true }
             )
         }
 
-        if (showDisconnectStravaDialog) {
-            AlertDialog(
-                onDismissRequest = { showDisconnectStravaDialog = false },
-                title = { Text("Disconnect Strava?") },
-                text = {
-                    Text("You'll need to sign in again to upload future workouts. Previously uploaded rides stay on Strava.")
+        item {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Devices")
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.Bluetooth,
+                title = "Re-pair devices",
+                subtitle = "Run the pairing flow again",
+                onClick = onRepairDevices
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Integrations")
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.CloudUpload,
+                title = "Strava",
+                subtitle = if (state.stravaConnected) {
+                    "Connected${state.stravaAthleteName?.let { " as $it" } ?: ""}"
+                } else {
+                    "Not connected — tap to sign in"
                 },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.disconnectStrava()
-                            showDisconnectStravaDialog = false
-                        }
-                    ) {
-                        Text("Disconnect", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDisconnectStravaDialog = false }) {
-                        Text("Cancel")
-                    }
+                iconTint = Color(0xFFFC4C02),
+                onClick = {
+                    if (state.stravaConnected) showDisconnectStravaDialog = true
+                    else onConnectStrava()
                 }
             )
         }
+        if (state.stravaConnected) {
+            item {
+                SettingsToggleItem(
+                    icon = Icons.Default.CloudSync,
+                    title = "Auto-upload to Strava",
+                    subtitle = "Send rides to Strava as soon as you finish",
+                    iconTint = Color(0xFFFC4C02),
+                    checked = state.autoUploadToStravaOnFinish,
+                    onCheckedChange = onSetAutoUploadToStrava
+                )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Display")
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.Brightness4,
+                title = "Theme",
+                subtitle = when (state.themeMode) {
+                    ThemeMode.LIGHT -> "Light"
+                    ThemeMode.DARK -> "Dark"
+                    ThemeMode.SYSTEM -> "System default"
+                },
+                onClick = { showThemeDialog = true }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Account")
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.AccountCircle,
+                title = "Signed in as",
+                subtitle = when {
+                    state.currentUser?.isAnonymous == true -> "Anonymous"
+                    state.currentUser?.email != null -> state.currentUser.email ?: ""
+                    else -> "—"
+                },
+                onClick = { }
+            )
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.Logout,
+                title = "Sign out",
+                subtitle = if (state.currentUser?.isAnonymous == true) {
+                    "Anonymous data won't transfer to a new account"
+                } else {
+                    "Sign out of WorkItOut"
+                },
+                iconTint = MaterialTheme.colorScheme.error,
+                onClick = { showSignOutDialog = true }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("About")
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.Info,
+                title = "WorkItOut",
+                subtitle = "Version 1.0.0",
+                onClick = { }
+            )
+        }
+    }
+
+    if (showThemeDialog) {
+        ThemeSelectionDialog(
+            currentTheme = state.themeMode,
+            onDismiss = { showThemeDialog = false },
+            onThemeSelected = { mode ->
+                onSetThemeMode(mode)
+                showThemeDialog = false
+            }
+        )
+    }
+
+    if (showPowerSmoothingDialog) {
+        PowerSmoothingDialog(
+            currentSeconds = state.powerSmoothingSeconds,
+            onDismiss = { showPowerSmoothingDialog = false },
+            onSecondsSelected = { seconds ->
+                onSetPowerSmoothing(seconds)
+                showPowerSmoothingDialog = false
+            }
+        )
+    }
+
+    if (showFtpDialog) {
+        FtpDialog(
+            currentFtp = state.ftp,
+            onDismiss = { showFtpDialog = false },
+            onFtpSelected = { watts ->
+                onSetFtp(watts)
+                showFtpDialog = false
+            }
+        )
+    }
+
+    if (showWeightDialog) {
+        NumericValueDialog(
+            title = "Body weight",
+            description = "Used with your power output to compute virtual speed and distance for Strava.",
+            currentValue = state.weightKg,
+            unit = "kg",
+            range = 30..200,
+            onDismiss = { showWeightDialog = false },
+            onValueSelected = { kg ->
+                onSetWeight(kg)
+                showWeightDialog = false
+            }
+        )
+    }
+
+    if (showMaxHrDialog) {
+        NumericValueDialog(
+            title = "Max Heart Rate",
+            description = "Your maximum heart rate. Used to compute %HRmax training zones.",
+            currentValue = state.maxHeartRate,
+            unit = "bpm",
+            range = 120..230,
+            onDismiss = { showMaxHrDialog = false },
+            onValueSelected = { bpm ->
+                onSetMaxHr(bpm)
+                showMaxHrDialog = false
+            }
+        )
+    }
+
+    if (showDisconnectStravaDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectStravaDialog = false },
+            title = { Text("Disconnect Strava?") },
+            text = {
+                Text("You'll need to sign in again to upload future workouts. Previously uploaded rides stay on Strava.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDisconnectStrava()
+                        showDisconnectStravaDialog = false
+                    }
+                ) {
+                    Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisconnectStravaDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showSignOutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSignOutDialog = false },
+            title = { Text("Sign out?") },
+            text = {
+                Text(
+                    if (state.currentUser?.isAnonymous == true) {
+                        "Your anonymous account will be lost. You'll need to sign in or create an account next time."
+                    } else {
+                        "You'll need to sign in again to use WorkItOut."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onSignOut()
+                        showSignOutDialog = false
+                    }
+                ) {
+                    Text("Sign out", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -378,7 +464,7 @@ fun ThemeSelectionDialog(
         title = { Text("Choose Theme") },
         text = {
             Column {
-                ThemeMode.values().forEach { mode ->
+                ThemeMode.entries.forEach { mode ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

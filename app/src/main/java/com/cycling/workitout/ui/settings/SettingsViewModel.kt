@@ -5,48 +5,59 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
+import com.cycling.workitout.data.auth.AuthRepository
 import com.cycling.workitout.data.preferences.ThemeMode
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
     private val bleManager: BleManager? = null,
     private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences,
-    private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository
+    private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository,
+    private val authRepository: AuthRepository = WorkItOutApplication.authRepository
 ) : ViewModel() {
 
-    val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+    val uiState: StateFlow<SettingsUiState> = combine(
+        combine(
+            themePreferences.themeMode,
+            themePreferences.powerSmoothingSeconds,
+            themePreferences.userFtpWatts,
+            themePreferences.userWeightKg,
+            themePreferences.userMaxHeartRate
+        ) { theme, smoothing, ftp, weight, maxHr ->
+            SettingsUiState(
+                themeMode = theme,
+                powerSmoothingSeconds = smoothing,
+                ftp = ftp,
+                weightKg = weight,
+                maxHeartRate = maxHr
+            )
+        },
+        stravaRepository.isConnected,
+        stravaRepository.athleteName,
+        themePreferences.autoUploadToStravaOnFinish,
+        authRepository.currentUser
+    ) { partial, connected, athleteName, autoUpload, user ->
+        partial.copy(
+            stravaConnected = connected,
+            stravaAthleteName = athleteName,
+            autoUploadToStravaOnFinish = autoUpload,
+            currentUser = user
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
-    val powerSmoothingSeconds: StateFlow<Int> = themePreferences.powerSmoothingSeconds
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 3)
-
-    val ftp: StateFlow<Int> = themePreferences.userFtpWatts
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
-
-    val weightKg: StateFlow<Int> = themePreferences.userWeightKg
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_WEIGHT_KG)
-
-    val maxHeartRate: StateFlow<Int> = themePreferences.userMaxHeartRate
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_MAX_HR)
-
-    val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
-    val stravaAthleteName: StateFlow<String?> = stravaRepository.athleteName
-
-    val autoUploadToStravaOnFinish: StateFlow<Boolean> = themePreferences.autoUploadToStravaOnFinish
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
+    //Actions
     fun setAutoUploadToStravaOnFinish(enabled: Boolean) {
         viewModelScope.launch {
             themePreferences.setAutoUploadToStravaOnFinish(enabled)
         }
     }
 
-    /** Launches Strava OAuth in a Custom Tab. The callback comes back through MainActivity. */
     fun connectStrava(context: Context) {
         stravaRepository.beginConnect(context)
     }
@@ -86,7 +97,10 @@ class SettingsViewModel(
         }
     }
 
-    /** Clear the first-run flag so Navigation routes back to FirstRunPairing. */
+    fun signOut() {
+        authRepository.signOut()
+    }
+
     fun resetFirstRun() {
         viewModelScope.launch {
             themePreferences.setHasCompletedFirstRun(false)
