@@ -14,6 +14,10 @@ val localProperties = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 val stravaClientId: String = localProperties.getProperty("STRAVA_CLIENT_ID", "")
+val keystorePath: String = localProperties.getProperty("KEYSTORE_PATH", "")
+val keystorePassword: String = localProperties.getProperty("KEYSTORE_PASSWORD", "")
+val signingKeyAlias: String = localProperties.getProperty("KEY_ALIAS", "")
+val signingKeyPassword: String = localProperties.getProperty("KEY_PASSWORD", "")
 
 composeCompiler {
     enableStrongSkippingMode = true
@@ -38,9 +42,19 @@ android {
         buildConfigField("String", "STRAVA_CLIENT_ID", "\"$stravaClientId\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(keystorePath)
+            storePassword = keystorePassword
+            keyAlias = signingKeyAlias
+            keyPassword = signingKeyPassword
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
