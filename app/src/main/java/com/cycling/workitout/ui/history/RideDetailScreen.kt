@@ -18,7 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.cycling.workitout.data.database.CompletedRideEntity
+import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.data.strava.HistoryStravaUploader
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -113,7 +113,7 @@ fun RideDetailScreen(
 }
 
 @Composable
-private fun RideHeader(ride: CompletedRideEntity) {
+private fun RideHeader(ride: Ride) {
     val dateFormat = SimpleDateFormat("EEEE, MMMM d, yyyy 'at' h:mm a", Locale.getDefault())
     val dateStr = dateFormat.format(Date(ride.startedAtMillis))
     val durationMin = ride.durationSeconds / 60
@@ -148,7 +148,7 @@ private fun RideHeader(ride: CompletedRideEntity) {
 
 @Composable
 private fun StravaSyncSection(
-    ride: CompletedRideEntity,
+    ride: Ride,
     uploadState: HistoryStravaUploader.UploadState,
     isStravaConnected: Boolean,
     onUpload: () -> Unit,
@@ -246,7 +246,7 @@ private fun SectionTitle(title: String) {
 }
 
 @Composable
-private fun StatsGrid(ride: CompletedRideEntity) {
+private fun StatsGrid(ride: Ride) {
     val intensityFactor = if (ride.ftpWatts > 0) {
         ride.normalizedPowerWatts.toFloat() / ride.ftpWatts
     } else 0f

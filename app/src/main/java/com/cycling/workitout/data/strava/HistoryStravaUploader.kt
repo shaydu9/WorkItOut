@@ -1,8 +1,8 @@
 package com.cycling.workitout.data.strava
 
 import android.content.Context
-import com.cycling.workitout.data.database.CompletedRideDao
 import com.cycling.workitout.data.export.WorkoutExporter
+import com.cycling.workitout.data.firestore.RideRepository
 import com.cycling.workitout.data.preferences.ThemePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +15,7 @@ import timber.log.Timber
 // Per-ride upload state so history uploads don't clobber the live workout screen's state.
 class HistoryStravaUploader(
     private val appContext: Context,
-    private val rideDao: CompletedRideDao,
+    private val rideRepository: RideRepository,
     private val stravaRepository: StravaRepository,
     private val themePreferences: ThemePreferences
 ) {
@@ -27,21 +27,21 @@ class HistoryStravaUploader(
         data class Failed(val message: String) : UploadState()
     }
 
-    private val perRideState = mutableMapOf<Long, MutableStateFlow<UploadState>>()
+    private val perRideState = mutableMapOf<String, MutableStateFlow<UploadState>>()
     private val mapLock = Any()
     private val uploadMutex = Mutex()
 
-    fun stateFor(rideId: Long): StateFlow<UploadState> = flowFor(rideId).asStateFlow()
+    fun stateFor(rideId: String): StateFlow<UploadState> = flowFor(rideId).asStateFlow()
 
-    private fun flowFor(rideId: Long): MutableStateFlow<UploadState> = synchronized(mapLock) {
+    private fun flowFor(rideId: String): MutableStateFlow<UploadState> = synchronized(mapLock) {
         perRideState.getOrPut(rideId) { MutableStateFlow(UploadState.Idle) }
     }
 
-    suspend fun upload(rideId: Long) {
+    suspend fun upload(rideId: String) {
         val flow = flowFor(rideId)
         if (flow.value is UploadState.Uploading) return
 
-        val ride = rideDao.getById(rideId)
+        val ride = rideRepository.getRideById(rideId)
         if (ride == null) {
             flow.value = UploadState.Failed("Ride not found")
             return
@@ -71,10 +71,10 @@ class HistoryStravaUploader(
 
                 val description = StravaActivityDescription.from(ride)
                 val activityId = stravaRepository.uploadFitForHistory(fitFile, ride.name, description)
-                rideDao.markStravaUploaded(
-                    rideId = rideId,
-                    activityId = activityId,
-                    uploadedAtMillis = System.currentTimeMillis()
+                rideRepository.markStravaUploaded(
+                    rideId,
+                    activityId,
+                    System.currentTimeMillis()
                 )
                 flow.value = UploadState.Success(activityId)
                 Timber.i("Strava history upload ok: ride=$rideId activity=$activityId")
@@ -86,7 +86,7 @@ class HistoryStravaUploader(
     }
 
     /** Drop a Failed state back to Idle so the user can retry from a clean button. */
-    fun clearError(rideId: Long) {
+    fun clearError(rideId: String) {
         val flow = flowFor(rideId)
         if (flow.value is UploadState.Failed) flow.value = UploadState.Idle
     }

@@ -11,7 +11,7 @@ import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.WorkoutState
-import com.cycling.workitout.data.database.CompletedRideEntity
+import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.data.export.WorkoutExporter
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
@@ -130,8 +130,8 @@ class WorkoutViewModel(
     private var rideSaved = false
 
     // Non-null once the ride is saved; triggers navigation to the ride detail screen.
-    private val _savedRideId = MutableStateFlow<Long?>(null)
-    val savedRideId: StateFlow<Long?> = _savedRideId.asStateFlow()
+    private val _savedRideId = MutableStateFlow<String?>(null)
+    val savedRideId: StateFlow<String?> = _savedRideId.asStateFlow()
 
     init {
         stravaRepository.resetUploadState()
@@ -331,7 +331,7 @@ class WorkoutViewModel(
                 }
                 val json = Json.encodeToString(compactPoints)
 
-                val entity = CompletedRideEntity(
+                val entity = Ride(
                     name = workout.name,
                     startedAtMillis = startedAt,
                     durationSeconds = durationSec,
@@ -344,7 +344,7 @@ class WorkoutViewModel(
                     ftpWatts = ftp,
                     dataPointsJson = json
                 )
-                val newId = WorkItOutApplication.database.completedRideDao().insert(entity)
+                val newId = WorkItOutApplication.rideRepository.saveRide(entity)
                 _savedRideId.value = newId
                 Timber.i("Ride saved to history: ${workout.name} (id=$newId)")
 

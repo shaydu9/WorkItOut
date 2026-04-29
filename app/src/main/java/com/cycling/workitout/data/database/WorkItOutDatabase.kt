@@ -8,15 +8,13 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [SavedDeviceEntity::class, CompletedRideEntity::class, SavedWorkoutEntity::class],
-    version = 7,
+    entities = [SavedDeviceEntity::class],
+    version = 8,
     exportSchema = false
 )
 abstract class WorkItOutDatabase : RoomDatabase() {
 
     abstract fun savedDeviceDao(): SavedDeviceDao
-    abstract fun completedRideDao(): CompletedRideDao
-    abstract fun savedWorkoutDao(): SavedWorkoutDao
 
     companion object {
         @Volatile
@@ -114,6 +112,14 @@ abstract class WorkItOutDatabase : RoomDatabase() {
             }
         }
 
+        /** v7 → v8: rides and workouts moved to Firestore. Drop their Room tables. */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS completed_rides")
+                db.execSQL("DROP TABLE IF EXISTS saved_workouts")
+            }
+        }
+
         /** v5 → v6: add saved_workouts table for the workout library. */
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -138,7 +144,7 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                     WorkItOutDatabase::class.java,
                     "workitout_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     // IMPORTANT: do NOT add fallbackToDestructiveMigration() here.
                     // It silently wipes the user's ride history (completed_rides) on any
                     // schema bump without a matching migration. Every version jump must

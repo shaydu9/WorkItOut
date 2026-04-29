@@ -8,7 +8,7 @@ import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.data.ai.AiWorkoutService
-import com.cycling.workitout.data.database.SavedWorkoutEntity
+import com.cycling.workitout.data.firestore.SavedWorkout
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.workout.LocalWorkoutGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -150,17 +150,17 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    private val dao = WorkItOutApplication.database.savedWorkoutDao()
+    private val workoutRepository = WorkItOutApplication.workoutRepository
 
     fun saveWorkoutToLibrary() {
         val workout = _uiState.value.preview ?: return
         viewModelScope.launch {
-            if (dao.existsByWorkoutId(workout.id)) {
+            if (workoutRepository.existsByWorkoutId(workout.id)) {
                 Timber.d("Workout ${workout.id} already saved")
                 return@launch
             }
-            val entity = SavedWorkoutEntity(
-                workoutId = workout.id,
+            val entity = SavedWorkout(
+                id = workout.id,
                 name = workout.name,
                 description = workout.description,
                 totalDurationSeconds = workout.totalDurationSeconds,
@@ -175,7 +175,7 @@ class HomeViewModel(
                     )
                 })
             )
-            dao.insert(entity)
+            workoutRepository.saveWorkout(entity)
             Timber.i("Saved workout to library: ${workout.name}")
         }
     }
@@ -192,7 +192,7 @@ data class CompactInterval(
 )
 
 // Rebuilds a WorkoutDefinition from a saved row, back-filling %FTP from snapshot watts on legacy rows.
-fun SavedWorkoutEntity.toWorkoutDefinition(currentFtp: Int): WorkoutDefinition {
+fun SavedWorkout.toWorkoutDefinition(currentFtp: Int): WorkoutDefinition {
     val intervals = Json.decodeFromString<List<CompactInterval>>(intervalsJson).map {
         val pct = it.pp
             ?: (if (currentFtp > 0) it.p.toFloat() / currentFtp.toFloat() else 0.65f)
@@ -205,7 +205,7 @@ fun SavedWorkoutEntity.toWorkoutDefinition(currentFtp: Int): WorkoutDefinition {
         )
     }
     return WorkoutDefinition(
-        id = workoutId,
+        id = id,
         name = name,
         description = description,
         intervals = intervals

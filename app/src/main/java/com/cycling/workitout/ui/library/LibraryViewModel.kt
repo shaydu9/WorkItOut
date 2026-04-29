@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.data.WorkoutDefinition
-import com.cycling.workitout.data.database.SavedWorkoutEntity
+import com.cycling.workitout.data.firestore.SavedWorkout
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.withFtp
 import com.cycling.workitout.ui.home.CompactInterval
@@ -26,9 +26,9 @@ class LibraryViewModel(
     private val preferences: ThemePreferences = WorkItOutApplication.themePreferences
 ) : ViewModel() {
 
-    private val dao = WorkItOutApplication.database.savedWorkoutDao()
+   private val workoutRepository = WorkItOutApplication.workoutRepository
 
-    val savedWorkouts: Flow<List<SavedWorkoutEntity>> = dao.getAll()
+    val savedWorkouts: Flow<List<SavedWorkout>> = workoutRepository.getSavedWorkouts()
 
     /** Canonical FTP, streamed from prefs. */
     val ftp: StateFlow<Int> = preferences.userFtpWatts
@@ -46,7 +46,7 @@ class LibraryViewModel(
     private val _selectedWorkout = MutableStateFlow<WorkoutDefinition?>(null)
     val selectedWorkout: StateFlow<WorkoutDefinition?> = _selectedWorkout.asStateFlow()
 
-    fun selectSavedWorkout(entity: SavedWorkoutEntity) {
+    fun selectSavedWorkout(entity: SavedWorkout) {
         _selectedWorkout.value = entity.toWorkoutDefinition(ftp.value).withFtp(ftp.value)
     }
 
@@ -58,21 +58,21 @@ class LibraryViewModel(
         _selectedWorkout.value = null
     }
 
-    fun deleteWorkout(entity: SavedWorkoutEntity) {
+    fun deleteWorkout(entity: SavedWorkout) {
         viewModelScope.launch {
-            dao.deleteById(entity.id)
+            workoutRepository.deleteWorkout(entity.id)
         }
     }
 
     /** Persist a default workout into the user library. */
     fun saveToLibrary(workout: WorkoutDefinition) {
         viewModelScope.launch {
-            if (dao.existsByWorkoutId(workout.id)) {
+            if (workoutRepository.existsByWorkoutId(workout.id)) {
                 Timber.d("Workout ${workout.id} already in library")
                 return@launch
             }
-            val entity = SavedWorkoutEntity(
-                workoutId = workout.id,
+            val entity = SavedWorkout(
+                id = workout.id,
                 name = workout.name,
                 description = workout.description,
                 totalDurationSeconds = workout.totalDurationSeconds,
@@ -87,7 +87,7 @@ class LibraryViewModel(
                     )
                 })
             )
-            dao.insert(entity)
+            workoutRepository.saveWorkout(entity)
             Timber.i("Saved starter workout to library: ${workout.name}")
         }
     }

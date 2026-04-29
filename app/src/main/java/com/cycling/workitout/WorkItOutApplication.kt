@@ -3,6 +3,9 @@ package com.cycling.workitout
 import android.app.Application
 import com.cycling.workitout.data.auth.AuthRepository
 import com.cycling.workitout.data.database.WorkItOutDatabase
+import com.cycling.workitout.data.firestore.RideRepository
+import com.cycling.workitout.data.firestore.UserProfileRepository
+import com.cycling.workitout.data.firestore.WorkoutRepository
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.repository.DeviceRepository
 import com.cycling.workitout.data.strava.HistoryStravaUploader
@@ -30,6 +33,15 @@ class WorkItOutApplication : Application() {
 
         lateinit var historyStravaUploader: HistoryStravaUploader
             private set
+
+        lateinit var rideRepository: RideRepository
+            private set
+
+        lateinit var workoutRepository: WorkoutRepository
+            private set
+
+        lateinit var userProfileRepository: UserProfileRepository
+            private set
     }
 
     override fun onCreate() {
@@ -43,12 +55,15 @@ class WorkItOutApplication : Application() {
         deviceRepository = DeviceRepository(database.savedDeviceDao())
         themePreferences = ThemePreferences(applicationContext)
         stravaRepository = StravaRepository(applicationContext)
+        rideRepository = RideRepository()
         historyStravaUploader = HistoryStravaUploader(
             appContext = applicationContext,
-            rideDao = database.completedRideDao(),
+            rideRepository = rideRepository,
             stravaRepository = stravaRepository,
             themePreferences = themePreferences
         )
+        workoutRepository = WorkoutRepository()
+        userProfileRepository = UserProfileRepository(themePreferences = themePreferences)
 
         Timber.i("Auth ready: currentUser=${authRepository.currentUser.value}")
     }

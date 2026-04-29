@@ -13,5 +13,6 @@ data class SettingsUiState(
     val stravaConnected: Boolean = false,
     val stravaAthleteName: String? = null,
     val autoUploadToStravaOnFinish: Boolean = false,
-    val currentUser: AuthUser? = null
+    val currentUser: AuthUser? = null,
+    val photoUrl: String? = null
 )

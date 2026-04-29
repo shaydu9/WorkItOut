@@ -6,6 +6,7 @@ import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
+import com.cycling.workitout.data.firestore.UserProfileRepository
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.repository.DeviceRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ enum class PairingStep {
 class FirstRunPairingViewModel(
     private val bleManager: BleManager,
     private val preferences: ThemePreferences,
-    private val deviceRepository: DeviceRepository = WorkItOutApplication.deviceRepository
+    private val deviceRepository: DeviceRepository = WorkItOutApplication.deviceRepository,
+    private val userProfileRepository: UserProfileRepository = WorkItOutApplication.userProfileRepository
 ) : ViewModel() {
 
     private val _step = MutableStateFlow(PairingStep.TRAINER)
@@ -39,6 +41,8 @@ class FirstRunPairingViewModel(
 
     private val _maxHeartRate = MutableStateFlow(ThemePreferences.DEFAULT_MAX_HR)
     val maxHeartRate: StateFlow<Int> = _maxHeartRate.asStateFlow()
+
+    private var wentThroughProfileStep = false
 
     val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -73,11 +77,16 @@ class FirstRunPairingViewModel(
     }
 
     fun nextStep() {
-        _step.value = when (_step.value) {
-            PairingStep.TRAINER -> PairingStep.HEART_RATE
-            PairingStep.HEART_RATE -> PairingStep.PROFILE
-            PairingStep.PROFILE -> PairingStep.READY
-            PairingStep.READY -> PairingStep.READY
+        viewModelScope.launch {
+            _step.value = when (_step.value) {
+                PairingStep.TRAINER -> PairingStep.HEART_RATE
+                PairingStep.HEART_RATE -> {
+                    if (userProfileRepository.hasExistingProfile()) PairingStep.READY
+                    else { wentThroughProfileStep = true; PairingStep.PROFILE }
+                }
+                PairingStep.PROFILE -> PairingStep.READY
+                PairingStep.READY -> PairingStep.READY
+            }
         }
     }
 
@@ -95,9 +104,11 @@ class FirstRunPairingViewModel(
 
     fun completeFirstRun(onDone: () -> Unit) {
         viewModelScope.launch {
-            preferences.setUserFtpWatts(_ftp.value)
-            preferences.setUserWeightKg(_weightKg.value)
-            preferences.setUserMaxHeartRate(_maxHeartRate.value)
+            if (wentThroughProfileStep) {
+                userProfileRepository.setFtp(_ftp.value)
+                userProfileRepository.setWeightKg(_weightKg.value)
+                userProfileRepository.setMaxHr(_maxHeartRate.value)
+            }
             preferences.setHasCompletedFirstRun(true)
             bleManager.stopScan()
             onDone()

@@ -3,7 +3,7 @@ package com.cycling.workitout.ui.history
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
-import com.cycling.workitout.data.database.CompletedRideEntity
+import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.data.strava.HistoryStravaUploader
 import com.cycling.workitout.ui.workout.CompactDataPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,14 +13,14 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import timber.log.Timber
 
-class RideDetailViewModel(private val rideId: Long) : ViewModel() {
+class RideDetailViewModel(private val rideId: String) : ViewModel() {
 
-    private val rideDao = WorkItOutApplication.database.completedRideDao()
+    private val rideRepository = WorkItOutApplication.rideRepository
     private val historyUploader = WorkItOutApplication.historyStravaUploader
     private val stravaRepository = WorkItOutApplication.stravaRepository
 
-    private val _ride = MutableStateFlow<CompletedRideEntity?>(null)
-    val ride: StateFlow<CompletedRideEntity?> = _ride.asStateFlow()
+    private val _ride = MutableStateFlow<Ride?>(null)
+    val ride: StateFlow<Ride?> = _ride.asStateFlow()
 
     private val _dataPoints = MutableStateFlow<List<CompactDataPoint>>(emptyList())
     val dataPoints: StateFlow<List<CompactDataPoint>> = _dataPoints.asStateFlow()
@@ -49,7 +49,7 @@ class RideDetailViewModel(private val rideId: Long) : ViewModel() {
     }
 
     private suspend fun loadRide() {
-        val entity = rideDao.getById(rideId)
+        val entity = rideRepository.getRideById(rideId)
         _ride.value = entity
         entity?.let {
             try {

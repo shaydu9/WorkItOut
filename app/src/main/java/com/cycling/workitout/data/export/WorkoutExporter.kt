@@ -5,7 +5,7 @@ import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
-import com.cycling.workitout.data.database.CompletedRideEntity
+import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.ui.workout.CompactDataPoint
 import com.cycling.workitout.workout.VirtualSpeedEstimator
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +47,7 @@ object WorkoutExporter {
     // Rebuilds a .fit from a stored history row — single-lap stub, recomputed speed, no per-interval analytics.
     suspend fun exportFromHistory(
         context: Context,
-        ride: CompletedRideEntity,
+        ride: Ride,
         riderWeightKg: Int
     ): File = withContext(Dispatchers.IO) {
         val samples = historyJson.decodeFromString<List<CompactDataPoint>>(ride.dataPointsJson)

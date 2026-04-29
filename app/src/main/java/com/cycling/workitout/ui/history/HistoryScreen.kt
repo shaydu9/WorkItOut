@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.cycling.workitout.data.database.CompletedRideEntity
+import com.cycling.workitout.data.firestore.Ride
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -25,7 +25,7 @@ import java.util.Locale
 fun HistoryScreen(
     viewModel: HistoryViewModel,
     onNavigateBack: () -> Unit,
-    onRideClick: (Long) -> Unit
+    onRideClick: (String) -> Unit
 ) {
     val rides by viewModel.rides.collectAsStateWithLifecycle(initialValue = emptyList())
 
@@ -80,7 +80,7 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun RideCard(ride: CompletedRideEntity, onClick: () -> Unit) {
+private fun RideCard(ride: Ride, onClick: () -> Unit) {
     val dateFormat = SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault())
     val dateStr = dateFormat.format(Date(ride.startedAtMillis))
     val durationMin = ride.durationSeconds / 60

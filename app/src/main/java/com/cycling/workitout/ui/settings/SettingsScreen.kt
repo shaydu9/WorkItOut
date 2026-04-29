@@ -1,5 +1,7 @@
 package com.cycling.workitout.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,10 +14,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.CircleShape
+import coil.compose.AsyncImage
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.preferences.ThemeMode
 
@@ -28,6 +33,11 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.uploadProfilePhoto(context, it) }
+    }
 
     Scaffold(
         topBar = {
@@ -52,6 +62,7 @@ fun SettingsScreen(
             onDisconnectStrava = viewModel::disconnectStrava,
             onSetAutoUploadToStrava = viewModel::setAutoUploadToStravaOnFinish,
             onSignOut = viewModel::signOut,
+            onUploadPhoto = viewModel::uploadProfilePhoto,
             onRepairDevices = {
                 viewModel.resetFirstRun()
                 onRepairDevices()
@@ -73,9 +84,15 @@ private fun SettingsScreenContent(
     onDisconnectStrava: () -> Unit,
     onSetAutoUploadToStrava: (Boolean) -> Unit,
     onSignOut: () -> Unit,
+    onUploadPhoto: (android.content.Context, android.net.Uri) -> Unit,
     onRepairDevices: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { onUploadPhoto(context, it) } }
+
     var showThemeDialog by remember { mutableStateOf(false) }
     var showPowerSmoothingDialog by remember { mutableStateOf(false) }
     var showFtpDialog by remember { mutableStateOf(false) }
@@ -194,14 +211,26 @@ private fun SettingsScreenContent(
         item {
             SettingsItem(
                 icon = Icons.Default.AccountCircle,
+                title = "Profile photo",
+                subtitle = "Tap to change",
+                photoUrl = state.photoUrl,
+                onClick = { photoPicker.launch("image/*") }
+            )
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.AccountCircle,
                 title = "Signed in as",
                 subtitle = when {
                     state.currentUser?.isAnonymous == true -> "Anonymous"
-                    state.currentUser?.email != null -> state.currentUser.email ?: ""
+                    state.currentUser?.email != null -> state.currentUser.email
                     else -> "—"
                 },
                 onClick = { }
             )
+        }
+        item {
+
         }
         item {
             SettingsItem(
@@ -367,7 +396,8 @@ fun SettingsItem(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
-    iconTint: Color? = null
+    iconTint: Color? = null,
+    photoUrl: String? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -379,12 +409,22 @@ fun SettingsItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint ?: MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
+            if (photoUrl != null) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint ?: MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(

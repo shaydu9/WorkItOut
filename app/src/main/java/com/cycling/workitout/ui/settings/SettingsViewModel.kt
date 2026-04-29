@@ -1,41 +1,46 @@
 package com.cycling.workitout.ui.settings
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.auth.AuthRepository
+import com.cycling.workitout.data.firestore.UserProfileRepository
 import com.cycling.workitout.data.preferences.ThemeMode
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import timber.log.Timber
 
 class SettingsViewModel(
     private val bleManager: BleManager? = null,
     private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences,
     private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository,
-    private val authRepository: AuthRepository = WorkItOutApplication.authRepository
+    private val authRepository: AuthRepository = WorkItOutApplication.authRepository,
+    private val userProfileRepository: UserProfileRepository = WorkItOutApplication.userProfileRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(
             themePreferences.themeMode,
             themePreferences.powerSmoothingSeconds,
-            themePreferences.userFtpWatts,
-            themePreferences.userWeightKg,
-            themePreferences.userMaxHeartRate
-        ) { theme, smoothing, ftp, weight, maxHr ->
+            userProfileRepository.profile
+        ) { theme, smoothing, profile ->
             SettingsUiState(
                 themeMode = theme,
                 powerSmoothingSeconds = smoothing,
-                ftp = ftp,
-                weightKg = weight,
-                maxHeartRate = maxHr
+                ftp = profile.ftpWatts,
+                weightKg = profile.weightKg,
+                maxHeartRate = profile.maxHr,
+                photoUrl = profile.photoUrl
             )
         },
         stravaRepository.isConnected,
@@ -81,29 +86,47 @@ class SettingsViewModel(
 
     fun setFtp(watts: Int) {
         viewModelScope.launch {
-            themePreferences.setUserFtpWatts(watts)
+            userProfileRepository.setFtp(watts)
         }
     }
 
     fun setWeightKg(kg: Int) {
         viewModelScope.launch {
-            themePreferences.setUserWeightKg(kg)
+            userProfileRepository.setWeightKg(kg)
         }
     }
 
     fun setMaxHeartRate(bpm: Int) {
         viewModelScope.launch {
-            themePreferences.setUserMaxHeartRate(bpm)
+            userProfileRepository.setMaxHr(bpm)
         }
     }
 
     fun signOut() {
-        authRepository.signOut()
+        viewModelScope.launch {
+            FirebaseFirestore.getInstance()
+                .terminate()
+                .await()
+            FirebaseFirestore.getInstance()
+                .clearPersistence()
+                .await()
+            authRepository.signOut()
+        }
     }
 
     fun resetFirstRun() {
         viewModelScope.launch {
             themePreferences.setHasCompletedFirstRun(false)
+        }
+    }
+
+    fun uploadProfilePhoto(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                userProfileRepository.uploadProfilePhoto(context, uri)
+            } catch (t: Throwable) {
+                Timber.e(t, "Photo upload failed")
+            }
         }
     }
 }

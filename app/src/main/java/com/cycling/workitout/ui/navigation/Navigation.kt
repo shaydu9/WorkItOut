@@ -41,7 +41,7 @@ sealed class Screen(val route: String) {
     object History : Screen("history")
     object Library : Screen("library")
     object RideDetail : Screen("ride_detail/{rideId}") {
-        fun withId(id: Long) = "ride_detail/$id"
+        fun withId(id: String) = "ride_detail/$id"
     }
 }
 
@@ -213,9 +213,9 @@ fun WorkItOutNavigation(bleManager: BleManager) {
 
         composable(
             route = Screen.RideDetail.route,
-            arguments = listOf(navArgument("rideId") { type = NavType.LongType })
+            arguments = listOf(navArgument("rideId") { type = NavType.StringType })
         ) { backStack ->
-            val rideId = backStack.arguments?.getLong("rideId") ?: return@composable
+            val rideId = backStack.arguments?.getString("rideId") ?: return@composable
             val viewModel = remember(rideId) { RideDetailViewModel(rideId) }
             RideDetailScreen(
                 viewModel = viewModel,

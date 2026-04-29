@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
-import com.cycling.workitout.data.database.SavedWorkoutEntity
+import com.cycling.workitout.data.firestore.SavedWorkout
 import com.cycling.workitout.ui.home.toWorkoutDefinition
 import kotlin.math.roundToInt
 
@@ -43,10 +43,10 @@ fun LibraryScreen(
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
     val currentFtp by viewModel.ftp.collectAsStateWithLifecycle()
 
-    var deleteTarget by remember { mutableStateOf<SavedWorkoutEntity?>(null) }
+    var deleteTarget by remember { mutableStateOf<SavedWorkout?>(null) }
 
     // Saved workout_ids, so the heart button on starter cards reflects saved state.
-    val savedIds = remember(savedWorkouts) { savedWorkouts.map { it.workoutId }.toSet() }
+    val savedIds = remember(savedWorkouts) { savedWorkouts.map { it.id }.toSet() }
 
     Scaffold(
         topBar = {
@@ -226,7 +226,7 @@ private fun DefaultWorkoutCard(
 
 @Composable
 private fun SavedWorkoutCard(
-    entity: SavedWorkoutEntity,
+    entity: SavedWorkout,
     currentFtp: Int,
     onClick: () -> Unit,
     onDelete: () -> Unit
