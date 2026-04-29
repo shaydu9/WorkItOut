@@ -111,6 +111,24 @@ class LoginViewModel(
         }
     }
 
+    fun signInWithGoogle(idToken: String) {
+        if (_uiState.value.isSubmitting) return
+
+        _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
+
+        viewModelScope.launch {
+            authRepository.signInWithGoogle(idToken)
+                .onSuccess { user ->
+                    Timber.i("Google sign-in success: uid=${user.uid}")
+                    _uiState.update { it.copy(isSubmitting = false) }
+                }
+                .onFailure { ex ->
+                    Timber.w(ex, "google sign-in failed")
+                    _uiState.update { it.copy(isSubmitting = false, errorMessage = messageFor(ex)) }
+                }
+        }
+    }
+
     private fun messageFor(ex: Throwable): String = when (ex) {
         is FirebaseAuthWeakPasswordException -> "Password must be at least 6 characters"
         is FirebaseAuthInvalidCredentialsException -> "Wrong email or password"

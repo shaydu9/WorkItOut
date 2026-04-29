@@ -149,6 +149,7 @@ dependencies {
     // Auth = login/signup. Firestore = our cloud database.
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

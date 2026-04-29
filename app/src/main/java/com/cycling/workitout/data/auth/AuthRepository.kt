@@ -2,6 +2,7 @@ package com.cycling.workitout.data.auth
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +42,12 @@ class AuthRepository(
 
     suspend fun signInAnonymously(): Result<AuthUser> = runCatching {
         val result = firebaseAuth.signInAnonymously().await()
+        result.user!!.toAuthUser()
+    }
+
+    suspend fun signInWithGoogle(idToken: String): Result<AuthUser> = runCatching {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        val result = firebaseAuth.signInWithCredential(credential).await()
         result.user!!.toAuthUser()
     }
 

@@ -24,6 +24,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -44,7 +45,8 @@ import com.cycling.workitout.ui.theme.WorkItOutTheme
 
 @Composable
 fun LoginScreen(
-    viewModel: LoginViewModel
+    viewModel: LoginViewModel,
+    onGoogleSignIn: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -58,6 +60,7 @@ fun LoginScreen(
             onToggleMode = viewModel::toggleMode,
             onSubmit = viewModel::submit,
             onContinueAnonymously = viewModel::continueAnonymously,
+            onGoogleSignIn = onGoogleSignIn,
             modifier = Modifier.padding(innerPadding)
         )
     }
@@ -73,6 +76,7 @@ private fun LoginScreenContent(
     onToggleMode: () -> Unit,
     onSubmit: () -> Unit,
     onContinueAnonymously: () -> Unit,
+    onGoogleSignIn: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -227,6 +231,15 @@ private fun LoginScreenContent(
             HorizontalDivider(Modifier.weight(1f))
         }
 
+        OutlinedButton(
+            onClick = onGoogleSignIn,
+            enabled = !state.isSubmitting,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Sign in with Google")
+        }
+        Spacer(Modifier.height(4.dp))
+
         TextButton(
             onClick = onContinueAnonymously,
             enabled = !state.isSubmitting,
@@ -253,6 +266,7 @@ private fun LoginScreenPreviewSurface(state: LoginUiState) {
                 onToggleMode = {},
                 onSubmit = {},
                 onContinueAnonymously = {},
+                onGoogleSignIn = {},
                 modifier = Modifier.padding(innerPadding)
             )
         }

@@ -31,6 +31,7 @@ import com.cycling.workitout.ui.settings.SettingsScreen
 import com.cycling.workitout.ui.workout.WorkoutScreen
 import com.cycling.workitout.ui.workout.WorkoutViewModel
 import kotlinx.coroutines.flow.first
+import timber.log.Timber
 
 sealed class Screen(val route: String) {
     object FirstRunPairing : Screen("first_run_pairing")
@@ -58,8 +59,36 @@ fun WorkItOutNavigation(bleManager: BleManager) {
     val currentUser by authRepository.currentUser.collectAsStateWithLifecycle()
 
     if (currentUser == null) {
+        val context = androidx.compose.ui.platform.LocalContext.current
         val loginViewModel = remember { LoginViewModel(authRepository) }
-        LoginScreen(viewModel = loginViewModel)
+
+        val googleSignInClient = remember {
+            val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
+                com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+            )
+                .requestIdToken("596435170722-t9firjj1ib56vsdttkqo24sae04re9uu.apps.googleusercontent.com")
+                .requestEmail()
+                .build()
+            com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(context, gso)
+        }
+
+        val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            try {
+                val account = com.google.android.gms.auth.api.signin.GoogleSignIn
+                    .getSignedInAccountFromIntent(result.data)
+                    .getResult(com.google.android.gms.common.api.ApiException::class.java)
+                account.idToken?.let { loginViewModel.signInWithGoogle(it) }
+            } catch (e: com.google.android.gms.common.api.ApiException) {
+                Timber.w(e, "Google sign-in failed")
+            }
+        }
+
+        LoginScreen(
+            viewModel = loginViewModel,
+            onGoogleSignIn = { launcher.launch(googleSignInClient.signInIntent) }
+        )
         return
     }
 
