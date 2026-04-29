@@ -4,8 +4,10 @@ import com.cycling.workitout.BuildConfig
 import com.cycling.workitout.data.network.core.NetworkModule
 import com.cycling.workitout.data.network.strava.StravaApi
 import com.cycling.workitout.data.network.strava.dto.StravaTokenResponse
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -32,10 +34,10 @@ class StravaClient(
     }
 
     suspend fun exchangeCode(code: String): StravaTokenResponse = withContext(Dispatchers.IO) {
-        val resp = api.exchangeAuthCode(
+        val resp = NetworkModule.stravaTokenExchange(
             clientId = BuildConfig.STRAVA_CLIENT_ID,
-            clientSecret = BuildConfig.STRAVA_CLIENT_SECRET,
-            code = code
+            code = code,
+            idToken = firebaseIdToken()
         )
         saveTokens(resp)
         resp
@@ -103,5 +105,13 @@ class StravaClient(
          * (scheme=workitout, host=workitout, path=/strava-callback).
          */
         const val REDIRECT_URI = "workitout://workitout/strava-callback"
+
+        suspend fun firebaseIdToken(): String = try {
+            FirebaseAuth.getInstance().currentUser
+                ?.getIdToken(false)?.await()?.token.orEmpty()
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to fetch Firebase ID token for Strava call")
+            ""
+        }
     }
 }

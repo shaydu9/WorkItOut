@@ -8,6 +8,7 @@ admin.initializeApp();
 setGlobalOptions({maxInstances: 10, region: "us-central1"});
 
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+const stravaClientSecret = defineSecret("STRAVA_CLIENT_SECRET");
 
 /**
  * Firestore-based per-user rate limit.
@@ -87,6 +88,114 @@ export const anthropicMessages = onRequest(
         body: JSON.stringify(req.body),
       }
     );
+
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  }
+);
+
+/**
+ * Verifies Firebase ID token then exchanges a Strava auth code for tokens.
+ * Keeps STRAVA_CLIENT_SECRET server-side.
+ * Body: { clientId, code }
+ */
+export const stravaTokenExchange = onRequest(
+  {secrets: [stravaClientSecret]},
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({error: "Method not allowed"});
+      return;
+    }
+
+    const authHeader = req.headers.authorization ?? "";
+    if (!authHeader.startsWith("Bearer ")) {
+      res.status(401).json({error: "Missing or invalid Authorization header"});
+      return;
+    }
+
+    try {
+      await admin.auth().verifyIdToken(authHeader.slice(7));
+    } catch {
+      res.status(401).json({error: "Invalid Firebase ID token"});
+      return;
+    }
+
+    const {clientId, code} = req.body as {
+      clientId: string;
+      code: string;
+    };
+
+    if (!clientId || !code) {
+      res.status(400).json({error: "clientId and code are required"});
+      return;
+    }
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      client_secret: stravaClientSecret.value(),
+      code,
+      grant_type: "authorization_code",
+    });
+
+    const upstream = await fetch("https://www.strava.com/oauth/token", {
+      method: "POST",
+      headers: {"content-type": "application/x-www-form-urlencoded"},
+      body: params.toString(),
+    });
+
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  }
+);
+
+/**
+ * Verifies Firebase ID token then refreshes a Strava access token.
+ * Keeps STRAVA_CLIENT_SECRET server-side.
+ * Body: { clientId, refreshToken }
+ */
+export const stravaTokenRefresh = onRequest(
+  {secrets: [stravaClientSecret]},
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({error: "Method not allowed"});
+      return;
+    }
+
+    const authHeader = req.headers.authorization ?? "";
+    if (!authHeader.startsWith("Bearer ")) {
+      res.status(401).json({error: "Missing or invalid Authorization header"});
+      return;
+    }
+
+    try {
+      await admin.auth().verifyIdToken(authHeader.slice(7));
+    } catch {
+      res.status(401).json({error: "Invalid Firebase ID token"});
+      return;
+    }
+
+    const {clientId, refreshToken} = req.body as {
+      clientId: string;
+      refreshToken: string;
+    };
+
+    if (!clientId || !refreshToken) {
+      res.status(400).json({error: "clientId and refreshToken are required"});
+      return;
+    }
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      client_secret: stravaClientSecret.value(),
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    });
+
+    const upstream = await fetch("https://www.strava.com/oauth/token", {
+      method: "POST",
+      headers: {"content-type": "application/x-www-form-urlencoded"},
+      body: params.toString(),
+    });
 
     const data = await upstream.json();
     res.status(upstream.status).json(data);

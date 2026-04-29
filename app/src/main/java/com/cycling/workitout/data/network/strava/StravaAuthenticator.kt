@@ -1,6 +1,8 @@
 package com.cycling.workitout.data.network.strava
 
 import com.cycling.workitout.BuildConfig
+import com.cycling.workitout.data.network.core.NetworkModule
+import com.cycling.workitout.data.strava.StravaClient
 import com.cycling.workitout.data.strava.StravaTokenStore
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
@@ -12,7 +14,7 @@ import timber.log.Timber
 // Handles 401s from Strava by refreshing the access token and retrying once.
 class StravaAuthenticator(
     private val tokenStore: StravaTokenStore,
-    private val stravaApiProvider: () -> StravaApi
+    @Suppress("UNUSED_PARAMETER") stravaApiProvider: () -> StravaApi
 ) : Authenticator {
 
     override fun authenticate(route: Route?, response: Response): Request? {
@@ -36,10 +38,11 @@ class StravaAuthenticator(
 
         val newAccessToken = try {
             runBlocking {
-                val resp = stravaApiProvider().refreshAccessToken(
+                val idToken = StravaClient.firebaseIdToken()
+                val resp = NetworkModule.stravaTokenRefresh(
                     clientId = BuildConfig.STRAVA_CLIENT_ID,
-                    clientSecret = BuildConfig.STRAVA_CLIENT_SECRET,
-                    refreshToken = refresh
+                    refreshToken = refresh,
+                    idToken = idToken
                 )
                 tokenStore.accessToken = resp.accessToken
                 tokenStore.refreshToken = resp.refreshToken

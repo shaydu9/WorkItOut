@@ -14,7 +14,6 @@ val localProperties = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 val stravaClientId: String = localProperties.getProperty("STRAVA_CLIENT_ID", "")
-val stravaClientSecret: String = localProperties.getProperty("STRAVA_CLIENT_SECRET", "")
 
 composeCompiler {
     enableStrongSkippingMode = true
@@ -37,7 +36,6 @@ android {
         }
 
         buildConfigField("String", "STRAVA_CLIENT_ID", "\"$stravaClientId\"")
-        buildConfigField("String", "STRAVA_CLIENT_SECRET", "\"$stravaClientSecret\"")
     }
 
     buildTypes {

@@ -6,9 +6,11 @@ import com.cycling.workitout.data.network.anthropic.AnthropicAuthInterceptor
 import com.cycling.workitout.data.network.strava.StravaApi
 import com.cycling.workitout.data.network.strava.StravaAuthInterceptor
 import com.cycling.workitout.data.network.strava.StravaAuthenticator
+import com.cycling.workitout.data.network.strava.dto.StravaTokenResponse
 import com.cycling.workitout.data.strava.StravaTokenStore
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -37,7 +39,7 @@ object NetworkModule {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(120, TimeUnit.SECONDS)  // Strava .fit uploads can be chunky
+            .writeTimeout(120, TimeUnit.SECONDS)
             .addInterceptor(RetryInterceptor())
             .addInterceptor(loggingInterceptor)
             .build()
@@ -54,6 +56,45 @@ object NetworkModule {
             .addConverterFactory(jsonConverter)
             .build()
             .create(AnthropicApi::class.java)
+    }
+
+    private val functionBaseUrl =
+        "https://us-central1-workitout-7cce5.cloudfunctions.net/"
+
+    suspend fun stravaTokenExchange(
+        clientId: String,
+        code: String,
+        idToken: String
+    ): StravaTokenResponse {
+        val jsonBody = """{"clientId":"$clientId","code":"$code"}"""
+        val response = sharedClient.newCall(
+            okhttp3.Request.Builder()
+                .url("${functionBaseUrl}stravaTokenExchange")
+                .addHeader("Authorization", "Bearer $idToken")
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .build()
+        ).execute()
+        val body = response.body?.string() ?: error("Empty response from stravaTokenExchange")
+        if (!response.isSuccessful) error("stravaTokenExchange failed ${response.code}: $body")
+        return NetworkJson.decodeFromString(StravaTokenResponse.serializer(), body)
+    }
+
+    suspend fun stravaTokenRefresh(
+        clientId: String,
+        refreshToken: String,
+        idToken: String
+    ): StravaTokenResponse {
+        val jsonBody = """{"clientId":"$clientId","refreshToken":"$refreshToken"}"""
+        val response = sharedClient.newCall(
+            okhttp3.Request.Builder()
+                .url("${functionBaseUrl}stravaTokenRefresh")
+                .addHeader("Authorization", "Bearer $idToken")
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .build()
+        ).execute()
+        val body = response.body?.string() ?: error("Empty response from stravaTokenRefresh")
+        if (!response.isSuccessful) error("stravaTokenRefresh failed ${response.code}: $body")
+        return NetworkJson.decodeFromString(StravaTokenResponse.serializer(), body)
     }
 
     // Lambda breaks the circular dep: Authenticator needs the API, but API isn't built yet.
