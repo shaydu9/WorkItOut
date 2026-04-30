@@ -16,6 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -256,6 +259,17 @@ private fun SettingsScreenContent(
                 title = "WorkItOut",
                 subtitle = "Version 1.0.0",
                 onClick = { }
+            )
+        }
+        item {
+            SettingsItem(
+                icon = Icons.Default.PrivacyTip,
+                title = "Privacy Policy",
+                subtitle = "shaydu9.github.io/WorkItOut/privacy.html",
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, "https://shaydu9.github.io/WorkItOut/privacy.html".toUri())
+                    ContextCompat.startActivity(context, intent, null)
+                }
             )
         }
     }
