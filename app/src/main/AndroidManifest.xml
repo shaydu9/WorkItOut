@@ -32,6 +32,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.WorkItOut"
         tools:targetApi="31">
+
+        <!-- Disabled by default; WorkItOutApplication enables at runtime for release builds only. -->
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

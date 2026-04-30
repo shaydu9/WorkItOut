@@ -10,7 +10,9 @@ import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.repository.DeviceRepository
 import com.cycling.workitout.data.strava.HistoryStravaUploader
 import com.cycling.workitout.data.strava.StravaRepository
+import com.cycling.workitout.logging.CrashlyticsTree
 import com.cycling.workitout.logging.PrettyTimberTree
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import timber.log.Timber
 
 class WorkItOutApplication : Application() {
@@ -48,6 +50,10 @@ class WorkItOutApplication : Application() {
         super.onCreate()
 
         Timber.plant(PrettyTimberTree())
+        if (!BuildConfig.DEBUG) {
+            FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(true)
+            Timber.plant(CrashlyticsTree())
+        }
         Timber.i("🚴 WorkItOut application started")
 
         database = WorkItOutDatabase.getDatabase(applicationContext)

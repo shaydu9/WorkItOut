@@ -7,6 +7,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
     id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 val localProperties = Properties().apply {
@@ -150,6 +151,7 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     implementation("io.coil-kt:coil-compose:2.6.0")
