@@ -7,6 +7,7 @@ import android.net.Uri
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.channels.awaitClose
@@ -37,7 +38,15 @@ class UserProfileRepository(
         }
         val reg = firestore.collection("users").document(uid)
             .addSnapshotListener { snap, err ->
-                if (err != null) { Timber.e(err, "profile listener error"); return@addSnapshotListener }
+                if (err != null) {
+                    if (err.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        // Listener torn down by sign-out / account deletion — expected.
+                        trySend(UserProfile())
+                    } else {
+                        Timber.e(err, "profile listener error")
+                    }
+                    return@addSnapshotListener
+                }
                 if (snap == null || !snap.exists()) {
                     trySend(UserProfile())
                     // Seed Firestore from local prefs on first sign-in

@@ -11,6 +11,7 @@ import com.cycling.workitout.data.firestore.UserProfileRepository
 import com.cycling.workitout.data.preferences.ThemeMode
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -103,14 +104,37 @@ class SettingsViewModel(
     }
 
     fun signOut() {
+        authRepository.signOut()
+    }
+
+    fun deleteAccount() {
         viewModelScope.launch {
-            FirebaseFirestore.getInstance()
-                .terminate()
-                .await()
-            FirebaseFirestore.getInstance()
-                .clearPersistence()
-                .await()
-            authRepository.signOut()
+            val uid = authRepository.currentUser.value?.uid ?: return@launch
+            val firestore = FirebaseFirestore.getInstance()
+            try {
+                val rides = firestore.collection("users").document(uid)
+                    .collection("rides").get().await()
+                for (doc in rides.documents) doc.reference.delete().await()
+
+                val workouts = firestore.collection("users").document(uid)
+                    .collection("savedWorkouts").get().await()
+                for (doc in workouts.documents) doc.reference.delete().await()
+
+                firestore.collection("users").document(uid).delete().await()
+
+                val result = authRepository.deleteCurrentUser()
+                if (result.isFailure) {
+                    val cause = result.exceptionOrNull()
+                    if (cause is FirebaseAuthRecentLoginRequiredException) {
+                        authRepository.signOut()
+                        return@launch
+                    }
+                    throw cause ?: IllegalStateException("Unknown delete failure")
+                }
+                themePreferences.setHasCompletedFirstRun(false)
+            } catch (t: Throwable) {
+                Timber.e(t, "Account deletion failed")
+            }
         }
     }
 

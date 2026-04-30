@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WorkItOut — Privacy Policy</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 740px;
+      margin: 48px auto;
+      padding: 0 24px 64px;
+      color: #1a1a1a;
+      line-height: 1.7;
+    }
+    h1 { font-size: 2rem; margin-bottom: 4px; }
+    .subtitle { color: #666; margin-bottom: 40px; font-size: 0.95rem; }
+    h2 { font-size: 1.15rem; margin-top: 40px; margin-bottom: 8px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 4px; }
+    a { color: #1a73e8; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+    th, td { border: 1px solid #ddd; padding: 10px 14px; text-align: left; font-size: 0.9rem; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<p class="subtitle">WorkItOut &nbsp;·&nbsp; Last updated: April 30, 2025</p>
+
+<p>WorkItOut is an indoor-cycling training app. This policy explains what data we collect, why we collect it, where it goes, and how you can request deletion.</p>
+
+<h2>1. What we collect</h2>
+<table>
+  <tr><th>Data</th><th>Why</th></tr>
+  <tr><td>Google account name &amp; email (when you sign in with Google)</td><td>Account identity</td></tr>
+  <tr><td>Profile photo (optional, uploaded by you)</td><td>Displayed in the app</td></tr>
+  <tr><td>Body weight, FTP, max heart rate</td><td>Training zone calculations and AI workout personalisation</td></tr>
+  <tr><td>Heart rate (live, from BLE sensor)</td><td>Displayed during rides; saved to your ride history</td></tr>
+  <tr><td>Power output (live, from BLE trainer)</td><td>Displayed during rides; saved to your ride history</td></tr>
+  <tr><td>Ride history (duration, distance, intervals, power &amp; HR streams)</td><td>Post-ride review and Strava upload</td></tr>
+  <tr><td>Crash and error reports (anonymised)</td><td>App stability</td></tr>
+</table>
+
+<h2>2. Third parties we share data with</h2>
+
+<h3 style="font-size:1rem; margin-bottom:4px;">Google Firebase (Google LLC)</h3>
+<p>We use Firebase for authentication, cloud storage, and crash reporting:</p>
+<ul>
+  <li><strong>Firebase Authentication</strong> — manages your sign-in (Google or anonymous). No passwords are stored by us.</li>
+  <li><strong>Cloud Firestore</strong> — stores your profile settings and ride history in Google's cloud so your data persists across devices.</li>
+  <li><strong>Firebase Storage</strong> — stores your profile photo.</li>
+  <li><strong>Firebase Crashlytics</strong> — receives anonymised crash reports (device model, OS version, stack trace). No personally identifiable information is included in crash reports.</li>
+</ul>
+<p>Firebase is governed by <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</p>
+
+<h3 style="font-size:1rem; margin-bottom:4px; margin-top:24px;">Anthropic (Anthropic, PBC)</h3>
+<p>When you request an AI-generated workout, we send your training parameters (FTP, weight, max HR, requested duration and target) to Anthropic's API to generate the interval plan. We do <strong>not</strong> send your name, email, or ride history to Anthropic. Anthropic processes this data under their <a href="https://www.anthropic.com/privacy" target="_blank">Privacy Policy</a>.</p>
+
+<h3 style="font-size:1rem; margin-bottom:4px; margin-top:24px;">Strava (Strava Inc.) — optional</h3>
+<p>If you connect your Strava account, we:</p>
+<ul>
+  <li>Store an OAuth access token so we can upload activities on your behalf.</li>
+  <li>Upload completed ride data (time, distance, power, HR, GPS-equivalent virtual ride) to your Strava profile.</li>
+</ul>
+<p>You can disconnect Strava at any time in Settings → Integrations. Disconnecting removes the token from our servers. Strava processes uploaded data under their <a href="https://www.strava.com/legal/privacy" target="_blank">Privacy Policy</a>.</p>
+
+<h2>3. Data retention</h2>
+<p>Your data is kept for as long as your account is active. If you delete your account, all Firestore records, Storage files, and the Strava token are permanently deleted within 30 days.</p>
+
+<h2>4. Data security</h2>
+<p>All data is transmitted over HTTPS/TLS. Firestore and Storage are protected by Firebase security rules that allow only authenticated users to access their own data.</p>
+
+<h2>5. Children's privacy</h2>
+<p>WorkItOut is not directed at children under 13. We do not knowingly collect personal data from children under 13.</p>
+
+<h2>6. Your rights</h2>
+<p>You can:</p>
+<ul>
+  <li><strong>Access or export</strong> your data by contacting us (see below).</li>
+  <li><strong>Delete your account and data</strong> by signing in to the app and using Sign Out, then emailing us with a deletion request. We will process it within 30 days.</li>
+  <li><strong>Disconnect Strava</strong> at any time in Settings → Integrations.</li>
+</ul>
+
+<h2>7. Contact</h2>
+<p>Questions or deletion requests: <a href="mailto:shaydu9@gmail.com">shaydu9@gmail.com</a></p>
+
+<h2>8. Changes to this policy</h2>
+<p>We may update this policy from time to time. Material changes will be noted by updating the "Last updated" date above. Continued use of the app after changes constitutes acceptance of the revised policy.</p>
+
+</body>
+</html>

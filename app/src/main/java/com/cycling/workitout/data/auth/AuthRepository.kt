@@ -54,6 +54,11 @@ class AuthRepository(
     fun signOut() {
         firebaseAuth.signOut()
     }
+
+    suspend fun deleteCurrentUser(): Result<Unit> = runCatching {
+        val user = firebaseAuth.currentUser ?: error("Not signed in")
+        user.delete().await()
+    }
 }
 
 private fun FirebaseUser.toAuthUser() = AuthUser(
