@@ -11,7 +11,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.WorkoutDefinition
@@ -132,7 +135,13 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 viewModel = viewModel,
                 onStartWorkout = { workout ->
                     WorkoutSession.pendingWorkout = workout
-                    navController.navigate(Screen.ActiveWorkout.route)
+                    // launchSingleTop + popUpTo(Home) keeps exactly one ActiveWorkout entry in
+                    // the back stack — defends against a stale WorkoutViewModel still driving
+                    // the trainer if the user starts a second workout via a different path.
+                    navController.navigate(Screen.ActiveWorkout.route) {
+                        launchSingleTop = true
+                        popUpTo(Screen.Home.route)
+                    }
                 },
                 onOpenSettings = {
                     navController.navigate(Screen.Settings.route)
@@ -149,11 +158,22 @@ fun WorkItOutNavigation(bleManager: BleManager) {
             )
         }
 
-        composable(Screen.ActiveWorkout.route) {
+        composable(Screen.ActiveWorkout.route) { backStackEntry ->
             val workout = WorkoutSession.pendingWorkout
-            val viewModel = remember(workout) {
-                WorkoutViewModel(bleManager, workout)
-            }
+            // Scope the VM to the NavBackStackEntry: when this entry is popped (Stop → ride
+            // saved → popUpTo, or onNavigateBack), Compose-Navigation calls onCleared(),
+            // which releases the BLE ERG token and unwires engine callbacks. With the
+            // previous `remember` pattern, onCleared never fired and the VM (plus its
+            // FE-C resender state) leaked across navigation, causing two workouts to
+            // fight over the trainer's resistance.
+            val viewModel: WorkoutViewModel = viewModel(
+                viewModelStoreOwner = backStackEntry,
+                factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                        WorkoutViewModel(bleManager, workout) as T
+                }
+            )
             // Navigate to ride detail once saved; pop workout so Back goes Home, not back into a stopped workout.
             val savedRideId by viewModel.savedRideId.collectAsStateWithLifecycle()
             LaunchedEffect(savedRideId) {
@@ -195,7 +215,10 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 onNavigateBack = { navController.popBackStack() },
                 onStartWorkout = { workout ->
                     WorkoutSession.pendingWorkout = workout
-                    navController.navigate(Screen.ActiveWorkout.route)
+                    navController.navigate(Screen.ActiveWorkout.route) {
+                        launchSingleTop = true
+                        popUpTo(Screen.Home.route)
+                    }
                 }
             )
         }

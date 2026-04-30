@@ -97,6 +97,51 @@ class BleManager(private val context: Context) {
     @Volatile private var fecWriteFailCount = 0
     private var fecHealthJob: kotlinx.coroutines.Job? = null
 
+    // ── ERG ownership ───────────────────────────────────────────────────────
+    // Only one caller at a time may drive trainer resistance. acquireErgControl()
+    // returns an opaque token; the caller must pass it to every ERG-related write.
+    // A second acquire invalidates the first — defends against leaked WorkoutViewModels
+    // (e.g. duplicated nav back-stack entries) racing to set conflicting targets.
+    private val ergOwnerLock = Any()
+    @Volatile private var ergOwnerToken: Any? = null
+
+    /** Take exclusive ERG control. Tears down any previous owner's resender. */
+    fun acquireErgControl(): Any {
+        synchronized(ergOwnerLock) {
+            val previous = ergOwnerToken
+            val token = Any()
+            ergOwnerToken = token
+            if (previous != null) {
+                // If you see this WARN in a normal ride log, two WorkoutViewModels were alive
+                // at the same moment — that's the dual-owner bug this token defends against.
+                Timber.w(
+                    "⚠️ ERG control preempted: previous owner=${System.identityHashCode(previous)} " +
+                    "evicted by new owner=${System.identityHashCode(token)} — old resender stopped"
+                )
+                stopFtmsWorkoutInternal()
+            } else {
+                Timber.d("ERG control acquired (token=${System.identityHashCode(token)})")
+            }
+            return token
+        }
+    }
+
+    /** Release ERG control if [token] still holds it. Idempotent and safe to call after preemption. */
+    fun releaseErgControl(token: Any) {
+        synchronized(ergOwnerLock) {
+            if (ergOwnerToken === token) {
+                stopFtmsWorkoutInternal()
+                ergOwnerToken = null
+                Timber.d("ERG control released (token=${System.identityHashCode(token)})")
+            }
+        }
+    }
+
+    private fun isCurrentOwner(token: Any?): Boolean {
+        if (token == null) return false
+        synchronized(ergOwnerLock) { return ergOwnerToken === token }
+    }
+
     // setWorkoutActive is kept for symmetry with the WorkoutEngine lifecycle, but per-sample
     // BLE callbacks no longer log — they fire several times per second per sensor and drown
     // out everything else. Power, HR and cadence still flow through the StateFlows; only the
@@ -345,7 +390,11 @@ class BleManager(private val context: Context) {
     }
 
     // FE-C doesn't need a control handshake — Page 49 frames are accepted directly.
-    fun requestFtmsControl() {
+    fun requestFtmsControl(token: Any) {
+        if (!isCurrentOwner(token)) {
+            Timber.w("requestFtmsControl dropped — caller does not own ERG control")
+            return
+        }
         when (_controlMode.value) {
             ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_REQUEST_CONTROL))
             ControlMode.FEC  -> Timber.d("FE-C control: requestControl is implicit — skipping")
@@ -354,7 +403,11 @@ class BleManager(private val context: Context) {
     }
 
     // FE-C starts ERG on first Page 49 — no explicit start needed.
-    fun startFtmsWorkout() {
+    fun startFtmsWorkout(token: Any) {
+        if (!isCurrentOwner(token)) {
+            Timber.w("startFtmsWorkout dropped — caller does not own ERG control")
+            return
+        }
         when (_controlMode.value) {
             ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_START_RESUME))
             ControlMode.FEC  -> Timber.d("FE-C control: start is implicit — skipping")
@@ -363,7 +416,17 @@ class BleManager(private val context: Context) {
     }
 
     // FE-C: send 0 W to release resistance and let the trainer coast.
-    fun stopFtmsWorkout() {
+    fun stopFtmsWorkout(token: Any) {
+        if (!isCurrentOwner(token)) {
+            Timber.w("stopFtmsWorkout dropped — caller does not own ERG control")
+            return
+        }
+        stopFtmsWorkoutInternal()
+    }
+
+    // Internal: bypasses ownership check. Called by acquireErgControl() to evict a stale
+    // owner's resender, by releaseErgControl(), and (legitimately) by stopFtmsWorkout(token).
+    private fun stopFtmsWorkoutInternal() {
         when (_controlMode.value) {
             ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_STOP_PAUSE, 0x01)) // 0x01 = Stop
             ControlMode.FEC  -> {
@@ -376,7 +439,11 @@ class BleManager(private val context: Context) {
         }
     }
 
-    fun setTargetPower(watts: Int) {
+    fun setTargetPower(token: Any, watts: Int) {
+        if (!isCurrentOwner(token)) {
+            Timber.w("setTargetPower($watts) dropped — caller does not own ERG control")
+            return
+        }
         when (_controlMode.value) {
             ControlMode.FTMS -> {
                 val data = byteArrayOf(
@@ -667,7 +734,18 @@ class BleManager(private val context: Context) {
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Timber.d("Smart trainer disconnected")
+                    // Decode the GATT status so logs unambiguously distinguish a real RF drop
+                    // from app-side issues. status=0 means we initiated the disconnect; non-zero
+                    // is the radio reporting why the link died.
+                    val reason = when (status) {
+                        BluetoothGatt.GATT_SUCCESS -> "clean (app-initiated)"
+                        8 -> "8 (LMP_RESPONSE_TIMEOUT — RF interference / out of range)"
+                        19 -> "19 (REMOTE_USER_TERMINATED — trainer powered off)"
+                        22 -> "22 (LOCAL_HOST_TERMINATED — Android stack closed link)"
+                        133 -> "133 (GATT_ERROR — generic radio failure, often range)"
+                        else -> "$status"
+                    }
+                    Timber.w("Smart trainer disconnected: status=$reason")
                     _isTrainerConnected.value = false
                     _isPowerMeterConnected.value = false
                     _trainerControlAvailable.value = false
