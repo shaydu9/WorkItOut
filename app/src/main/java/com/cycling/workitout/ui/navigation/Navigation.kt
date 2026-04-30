@@ -5,7 +5,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,6 +29,8 @@ import com.cycling.workitout.ui.library.LibraryViewModel
 import com.cycling.workitout.ui.settings.SettingsScreen
 import com.cycling.workitout.ui.workout.WorkoutScreen
 import com.cycling.workitout.ui.workout.WorkoutViewModel
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
@@ -52,31 +53,35 @@ object WorkoutSession {
 
 @Composable
 fun WorkItOutNavigation(bleManager: BleManager) {
-    val navController = rememberNavController()
-    val prefs = WorkItOutApplication.themePreferences
-
     val authRepository = WorkItOutApplication.authRepository
     val currentUser by authRepository.currentUser.collectAsStateWithLifecycle()
 
+    val navController = key(currentUser?.uid) { rememberNavController() }
+    val prefs = WorkItOutApplication.themePreferences
+    
     if (currentUser == null) {
         val context = androidx.compose.ui.platform.LocalContext.current
         val loginViewModel = remember { LoginViewModel(authRepository) }
 
         val googleSignInClient = remember {
-            val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
-                com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+            val gso = GoogleSignInOptions.Builder(
+                GoogleSignInOptions.DEFAULT_SIGN_IN
             )
                 .requestIdToken("596435170722-t9firjj1ib56vsdttkqo24sae04re9uu.apps.googleusercontent.com")
                 .requestEmail()
                 .build()
-            com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(context, gso)
+            GoogleSignIn.getClient(context, gso)
+        }
+
+        LaunchedEffect(Unit) {
+            googleSignInClient.signOut()
         }
 
         val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
             contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
         ) { result ->
             try {
-                val account = com.google.android.gms.auth.api.signin.GoogleSignIn
+                val account = GoogleSignIn
                     .getSignedInAccountFromIntent(result.data)
                     .getResult(com.google.android.gms.common.api.ApiException::class.java)
                 account.idToken?.let { loginViewModel.signInWithGoogle(it) }

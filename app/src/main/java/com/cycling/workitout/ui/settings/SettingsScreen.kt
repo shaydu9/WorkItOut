@@ -70,12 +70,14 @@ fun SettingsScreen(
                 viewModel.resetFirstRun()
                 onRepairDevices()
             },
+            onDeleteAccount = viewModel::deleteAccount,
             modifier = Modifier.padding(paddingValues)
         )
     }
 }
 
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 private fun SettingsScreenContent(
     state: SettingsUiState,
     onSetFtp: (Int) -> Unit,
@@ -89,6 +91,7 @@ private fun SettingsScreenContent(
     onSignOut: () -> Unit,
     onUploadPhoto: (android.content.Context, android.net.Uri) -> Unit,
     onRepairDevices: () -> Unit,
+    onDeleteAccount: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -103,6 +106,7 @@ private fun SettingsScreenContent(
     var showMaxHrDialog by remember { mutableStateOf(false) }
     var showDisconnectStravaDialog by remember { mutableStateOf(false) }
     var showSignOutDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -250,6 +254,18 @@ private fun SettingsScreenContent(
         }
 
         item {
+            SettingsItem(
+                icon = Icons.Default.DeleteForever,
+                title = "Delete account",
+                subtitle = "Permanently delete your account and all data",
+                iconTint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    showDeleteAccountDialog = true
+                }
+            )
+        }
+
+        item {
             Spacer(Modifier.height(16.dp))
             SectionHeader("About")
         }
@@ -387,6 +403,31 @@ private fun SettingsScreenContent(
             },
             dismissButton = {
                 TextButton(onClick = { showSignOutDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false },
+            title = { Text("Delete account?") },
+            text = {
+                Text("This permanently deletes your account, rides, workouts, and profile. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteAccount()
+                        showDeleteAccountDialog = false
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountDialog = false }) {
                     Text("Cancel")
                 }
             }
