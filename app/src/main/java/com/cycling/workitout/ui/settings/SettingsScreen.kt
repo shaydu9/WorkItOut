@@ -22,8 +22,12 @@ import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
+import com.cycling.workitout.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.preferences.ThemeMode
 
@@ -166,20 +170,30 @@ private fun SettingsScreenContent(
             SectionHeader("Integrations")
         }
         item {
-            SettingsItem(
-                icon = Icons.Default.CloudUpload,
-                title = "Strava",
-                subtitle = if (state.stravaConnected) {
-                    "Connected${state.stravaAthleteName?.let { " as $it" } ?: ""}"
-                } else {
-                    "Not connected — tap to sign in"
-                },
-                iconTint = Color(0xFFFC4C02),
-                onClick = {
-                    if (state.stravaConnected) showDisconnectStravaDialog = true
-                    else onConnectStrava()
+            if (state.stravaConnected) {
+                SettingsItem(
+                    icon = Icons.Default.CloudUpload,
+                    title = "Strava",
+                    subtitle = "Connected${state.stravaAthleteName?.let { " as $it" } ?: ""}",
+                    iconTint = Color(0xFFFC4C02),
+                    onClick = { showDisconnectStravaDialog = true }
+                )
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.btn_strava_connect_with_orange),
+                        contentDescription = "Connect with Strava",
+                        modifier = Modifier
+                            .height(48.dp)
+                            .clickable(onClick = onConnectStrava)
+                    )
                 }
-            )
+            }
         }
         if (state.stravaConnected) {
             item {
