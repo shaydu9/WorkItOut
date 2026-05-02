@@ -48,6 +48,11 @@ class WorkoutViewModel(
 
     private val workoutEngine = WorkoutEngine(viewModelScope)
 
+    // Single-owner token for trainer ERG writes. Acquiring here invalidates any prior
+    // owner (e.g. a leaked previous WorkoutViewModel still on the back stack), so its
+    // setTargetPower / resender calls are dropped at the BLE layer instead of fighting us.
+    private val ergToken: Any = bleManager.acquireErgControl()
+
     // ── Strava integration ────────────────────────────────────────────
     val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
     val stravaUploadState: StateFlow<StravaRepository.UploadState> = stravaRepository.uploadState
@@ -161,21 +166,21 @@ class WorkoutViewModel(
             if (bleManager.isDemoMode.value) {
                 bleManager.setDemoTargetPower(watts)
             } else if (_ergEnabled.value) {
-                bleManager.setTargetPower(watts)
+                bleManager.setTargetPower(ergToken, watts)
             }
         }
 
         workoutEngine.onWorkoutStarted = {
             bleManager.setWorkoutActive(true)
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
-                bleManager.requestFtmsControl()
-                bleManager.startFtmsWorkout()
+                bleManager.requestFtmsControl(ergToken)
+                bleManager.startFtmsWorkout(ergToken)
             }
         }
 
         workoutEngine.onWorkoutStopped = {
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
-                bleManager.stopFtmsWorkout()
+                bleManager.stopFtmsWorkout(ergToken)
             }
             bleManager.setWorkoutActive(false)
         }
@@ -196,8 +201,8 @@ class WorkoutViewModel(
             if (!bleManager.isDemoMode.value && _ergEnabled.value) {
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
-                    bleManager.requestFtmsControl()
-                    bleManager.setTargetPower(firstTarget)
+                    bleManager.requestFtmsControl(ergToken)
+                    bleManager.setTargetPower(ergToken, firstTarget)
                     Timber.i("Pre-sent first interval target $firstTarget W on screen entry")
                 }
             }
@@ -228,7 +233,7 @@ class WorkoutViewModel(
             if (_ergEnabled.value) {
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
-                    bleManager.setTargetPower(firstTarget)
+                    bleManager.setTargetPower(ergToken, firstTarget)
                     Timber.i("Startup: reopened burst for first target $firstTarget W")
                 }
             }
@@ -445,17 +450,32 @@ class WorkoutViewModel(
         viewModelScope.launch {
             _ergRearming.value = true
             try {
-                bleManager.stopFtmsWorkout()
+                bleManager.stopFtmsWorkout(ergToken)
                 delay(250L)
-                bleManager.requestFtmsControl()
-                bleManager.startFtmsWorkout()
-                bleManager.setTargetPower(targetWatts)
+                bleManager.requestFtmsControl(ergToken)
+                bleManager.startFtmsWorkout(ergToken)
+                bleManager.setTargetPower(ergToken, targetWatts)
                 // Keep the UI hint up for a moment so the rider sees the app handled it.
                 delay(1_500L)
             } finally {
                 _ergRearming.value = false
             }
         }
+    }
+
+    // Tear down on VM destruction — critical so a navigated-away workout stops driving the
+    // trainer. Order matters: drop engine callbacks before releasing the BLE token, so any
+    // in-flight tick can't fire a setTargetPower after release.
+    override fun onCleared() {
+        super.onCleared()
+        workoutEngine.onTargetPowerChanged = null
+        workoutEngine.onWorkoutStarted = null
+        workoutEngine.onWorkoutStopped = null
+        // releaseErgControl() sends the trainer to freewheel and stops the FE-C resender.
+        // Idempotent — safe even if a newer VM has already preempted us.
+        bleManager.releaseErgControl(ergToken)
+        bleManager.setWorkoutActive(false)
+        Timber.d("WorkoutViewModel cleared — ERG released, engine callbacks unwired")
     }
 
     // When re-enabling ERG, re-acquire control and push the current target immediately.
@@ -465,12 +485,12 @@ class WorkoutViewModel(
         if (bleManager.isDemoMode.value) return
         viewModelScope.launch {
             if (enabled) {
-                bleManager.requestFtmsControl()
-                bleManager.startFtmsWorkout()
+                bleManager.requestFtmsControl(ergToken)
+                bleManager.startFtmsWorkout(ergToken)
                 val current = workoutEngine.progress.value.targetPowerWatts
-                if (current > 0) bleManager.setTargetPower(current)
+                if (current > 0) bleManager.setTargetPower(ergToken, current)
             } else {
-                bleManager.stopFtmsWorkout()
+                bleManager.stopFtmsWorkout(ergToken)
             }
         }
     }
