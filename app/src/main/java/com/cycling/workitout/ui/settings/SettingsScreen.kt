@@ -179,19 +179,42 @@ private fun SettingsScreenContent(
                     onClick = { showDisconnectStravaDialog = true }
                 )
             } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.btn_strava_connect_with_orange),
-                        contentDescription = "Connect with Strava",
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
                         modifier = Modifier
-                            .height(48.dp)
-                            .clickable(onClick = onConnectStrava)
-                    )
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            "Strava",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFC4C02)
+                        )
+                        listOf(
+                            "Auto-upload completed rides",
+                            "Sync your heart rate, power, and cadence data",
+                            "View your activity on Strava after every workout"
+                        ).forEach { bullet ->
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text("•", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
+                                Text(bullet, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.btn_strava_connect_with_orange),
+                                contentDescription = "Connect with Strava",
+                                modifier = Modifier
+                                    .height(44.dp)
+                                    .clickable(onClick = onConnectStrava)
+                            )
+                        }
+                    }
                 }
             }
         }
