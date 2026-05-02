@@ -12,7 +12,28 @@
           "package_name": "com.cycling.workitout"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "596435170722-guknm7tkgaod48584jdek6lgh4uffmf7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cycling.workitout",
+            "certificate_hash": "c0bfe7e295a962815fc375c503f8f40850cfbe7c"
+          }
+        },
+        {
+          "client_id": "596435170722-mqu2ch8nf414d65cgfhegcfcq7g0noo6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cycling.workitout",
+            "certificate_hash": "af2618afaf9e82f686fac24949e7fd33acf236ed"
+          }
+        },
+        {
+          "client_id": "596435170722-t9firjj1ib56vsdttkqo24sae04re9uu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC0BtIlXDQCJE1ZOzpWNbGA7oXrxzkL0eM"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "596435170722-t9firjj1ib56vsdttkqo24sae04re9uu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
