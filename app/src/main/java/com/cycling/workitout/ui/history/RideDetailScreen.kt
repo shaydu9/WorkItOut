@@ -3,6 +3,7 @@ package com.cycling.workitout.ui.history
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -25,8 +26,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.cycling.workitout.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.ui.workout.CompactDataPoint
 import java.text.SimpleDateFormat
@@ -191,7 +194,7 @@ private fun StravaSyncSection(
                         }) {
                             Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Open")
+                            Text("View on Strava")
                         }
                     }
                 }
@@ -231,6 +234,14 @@ private fun StravaSyncSection(
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Image(
+                painter = painterResource(R.drawable.api_logo_pwrdby_strava_horiz_orange),
+                contentDescription = "Powered by Strava",
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .height(20.dp)
+            )
         }
     }
 }
