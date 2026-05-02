@@ -9,13 +9,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
@@ -49,14 +48,6 @@ class UserProfileRepository(
                 }
                 if (snap == null || !snap.exists()) {
                     trySend(UserProfile())
-                    // Seed Firestore from local prefs on first sign-in
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        patch(mapOf(
-                            "ftpWatts" to themePreferences.userFtpWatts.first(),
-                            "weightKg" to themePreferences.userWeightKg.first(),
-                            "maxHr" to themePreferences.userMaxHeartRate.first()
-                        ))
-                    }
                     return@addSnapshotListener
                 }
                 val d = snap.data ?: emptyMap<String, Any>()
@@ -80,10 +71,12 @@ class UserProfileRepository(
 
     suspend fun hasExistingProfile(): Boolean {
         val uid = uid() ?: return false
+        // Source.SERVER bypasses the local cache. First-run branching depends on this
+        // answer, so a stale "doesn't exist" from cache must never decide the user's flow.
         return firestore
             .collection("users")
             .document(uid)
-            .get()
+            .get(Source.SERVER)
             .await()
             .exists()
     }
