@@ -114,13 +114,13 @@ class BleManager(private val context: Context) {
             if (previous != null) {
                 // If you see this WARN in a normal ride log, two WorkoutViewModels were alive
                 // at the same moment — that's the dual-owner bug this token defends against.
-                Timber.w(
-                    "⚠️ ERG control preempted: previous owner=${System.identityHashCode(previous)} " +
+                Timber.tag("ERG").w(
+                    "⚠️ control preempted: previous owner=${System.identityHashCode(previous)} " +
                     "evicted by new owner=${System.identityHashCode(token)} — old resender stopped"
                 )
                 stopFtmsWorkoutInternal()
             } else {
-                Timber.d("ERG control acquired (token=${System.identityHashCode(token)})")
+                Timber.tag("ERG").d("control acquired (token=${System.identityHashCode(token)})")
             }
             return token
         }
@@ -132,7 +132,7 @@ class BleManager(private val context: Context) {
             if (ergOwnerToken === token) {
                 stopFtmsWorkoutInternal()
                 ergOwnerToken = null
-                Timber.d("ERG control released (token=${System.identityHashCode(token)})")
+                Timber.tag("ERG").d("control released (token=${System.identityHashCode(token)})")
             }
         }
     }
@@ -392,7 +392,7 @@ class BleManager(private val context: Context) {
     // FE-C doesn't need a control handshake — Page 49 frames are accepted directly.
     fun requestFtmsControl(token: Any) {
         if (!isCurrentOwner(token)) {
-            Timber.w("requestFtmsControl dropped — caller does not own ERG control")
+            Timber.tag("ERG").w("requestFtmsControl dropped — caller token=${System.identityHashCode(token)} not current owner=${System.identityHashCode(ergOwnerToken)}")
             return
         }
         when (_controlMode.value) {
@@ -405,7 +405,7 @@ class BleManager(private val context: Context) {
     // FE-C starts ERG on first Page 49 — no explicit start needed.
     fun startFtmsWorkout(token: Any) {
         if (!isCurrentOwner(token)) {
-            Timber.w("startFtmsWorkout dropped — caller does not own ERG control")
+            Timber.tag("ERG").w("startFtmsWorkout dropped — caller token=${System.identityHashCode(token)} not current owner=${System.identityHashCode(ergOwnerToken)}")
             return
         }
         when (_controlMode.value) {
@@ -418,7 +418,7 @@ class BleManager(private val context: Context) {
     // FE-C: send 0 W to release resistance and let the trainer coast.
     fun stopFtmsWorkout(token: Any) {
         if (!isCurrentOwner(token)) {
-            Timber.w("stopFtmsWorkout dropped — caller does not own ERG control")
+            Timber.tag("ERG").w("stopFtmsWorkout dropped — caller token=${System.identityHashCode(token)} not current owner=${System.identityHashCode(ergOwnerToken)}")
             return
         }
         stopFtmsWorkoutInternal()
@@ -441,7 +441,7 @@ class BleManager(private val context: Context) {
 
     fun setTargetPower(token: Any, watts: Int) {
         if (!isCurrentOwner(token)) {
-            Timber.w("setTargetPower($watts) dropped — caller does not own ERG control")
+            Timber.tag("ERG").w("setTargetPower($watts) dropped — caller token=${System.identityHashCode(token)} not current owner=${System.identityHashCode(ergOwnerToken)}")
             return
         }
         when (_controlMode.value) {

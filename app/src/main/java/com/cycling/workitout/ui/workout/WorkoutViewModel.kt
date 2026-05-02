@@ -53,6 +53,13 @@ class WorkoutViewModel(
     // setTargetPower / resender calls are dropped at the BLE layer instead of fighting us.
     private val ergToken: Any = bleManager.acquireErgControl()
 
+    init {
+        Timber.tag("ERG").d(
+            "WorkoutViewModel init: vm=${System.identityHashCode(this)} " +
+            "token=${System.identityHashCode(ergToken)}"
+        )
+    }
+
     // ── Strava integration ────────────────────────────────────────────
     val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
     val stravaUploadState: StateFlow<StravaRepository.UploadState> = stravaRepository.uploadState
@@ -475,7 +482,7 @@ class WorkoutViewModel(
         // Idempotent — safe even if a newer VM has already preempted us.
         bleManager.releaseErgControl(ergToken)
         bleManager.setWorkoutActive(false)
-        Timber.d("WorkoutViewModel cleared — ERG released, engine callbacks unwired")
+        Timber.tag("ERG").d("WorkoutViewModel cleared (vm=${System.identityHashCode(this)}) — released, engine callbacks unwired")
     }
 
     // When re-enabling ERG, re-acquire control and push the current target immediately.
