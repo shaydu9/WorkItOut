@@ -151,9 +151,6 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 onOpenSettings = {
                     navController.navigate(Screen.Settings.route)
                 },
-                onRepairDevices = {
-                    navController.navigate(Screen.FirstRunPairing.route)
-                },
                 onOpenHistory = {
                     navController.navigate(Screen.History.route)
                 },

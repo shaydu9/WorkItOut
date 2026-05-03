@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
+import com.cycling.workitout.data.BleDevice
+import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
@@ -54,14 +56,34 @@ class HomeViewModel(
         .map { it.ftpWatts }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
 
+    val displayAsPercent: StateFlow<Boolean> = preferences.displayTargetsAsPercent
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val isTrainerConnected: StateFlow<Boolean> = bleManager.isTrainerConnected
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val isHeartRateConnected: StateFlow<Boolean> = bleManager.isHeartRateConnected
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    val displayAsPercent: StateFlow<Boolean> = preferences.displayTargetsAsPercent
+    val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isScanning: StateFlow<Boolean> = bleManager.isScanning
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun startScan() { viewModelScope.launch { bleManager.startScan() }}
+
+    fun stopScan() { viewModelScope.launch { bleManager.stopScan() }}
+
+    fun connectDevice(device: BleDevice) {
+        viewModelScope.launch {
+            when (device.deviceType) {
+                DeviceType.SMART_TRAINER -> bleManager.connectTrainer(device)
+                DeviceType.HEART_RATE_MONITOR -> bleManager.connectHeartRateMonitor(device)
+                else -> Unit
+            }
+        }
+    }
 
     fun setDisplayAsPercent(asPercent: Boolean) {
         viewModelScope.launch { preferences.setDisplayTargetsAsPercent(asPercent) }

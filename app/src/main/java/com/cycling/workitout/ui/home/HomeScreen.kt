@@ -6,24 +6,56 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,8 +64,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
+import com.cycling.workitout.ui.components.DevicePairingDialog
+import com.cycling.workitout.ui.components.rememberBlePermissionState
 import com.cycling.workitout.ui.library.WattsPercentToggle
 import com.cycling.workitout.ui.library.formatTarget
 import java.util.Locale
@@ -46,7 +81,6 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onStartWorkout: (WorkoutDefinition) -> Unit,
     onOpenSettings: () -> Unit,
-    onRepairDevices: () -> Unit,
     onOpenHistory: () -> Unit = {},
     onOpenLibrary: () -> Unit = {}
 ) {
@@ -55,6 +89,12 @@ fun HomeScreen(
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
+    // Dialog State
+    var pairingDialogDeviceType by remember { mutableStateOf<DeviceType?>(null) }
+    val withBlePermission = rememberBlePermissionState()
+
+    val onTrainerTap = { withBlePermission {pairingDialogDeviceType = DeviceType.SMART_TRAINER }}
+    val onHrTap = { withBlePermission {pairingDialogDeviceType = DeviceType.HEART_RATE_MONITOR }}
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(state.error) {
@@ -100,9 +140,28 @@ fun HomeScreen(
             onSaveWorkoutToLibrary = viewModel::saveWorkoutToLibrary,
             onDismissPreview = viewModel::dismissPreview,
             onStartWorkout = onStartWorkout,
-            onRepairDevices = onRepairDevices,
+            onTrainerTap = onTrainerTap,
+            onHrTap = onHrTap,
             modifier = Modifier.padding(padding)
         )
+
+        pairingDialogDeviceType?.let { deviceType ->
+            val devices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
+            val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+
+            LaunchedEffect(deviceType) { viewModel.startScan() }
+
+            DevicePairingDialog(
+                deviceType = deviceType,
+                devices = devices.filter { it.deviceType == deviceType },
+                isScanning = isScanning,
+                onConnect = viewModel::connectDevice,
+                onDismiss = {
+                    viewModel.stopScan()
+                    pairingDialogDeviceType = null
+                }
+            )
+        }
     }
 }
 
@@ -124,7 +183,8 @@ private fun HomeScreenContent(
     onSaveWorkoutToLibrary: () -> Unit,
     onDismissPreview: () -> Unit,
     onStartWorkout: (WorkoutDefinition) -> Unit,
-    onRepairDevices: () -> Unit,
+    onTrainerTap: () -> Unit,
+    onHrTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -136,7 +196,8 @@ private fun HomeScreenContent(
         ConnectionStatusChip(
             trainerConnected = trainerConnected,
             hrConnected = hrConnected,
-            onRepair = onRepairDevices
+            onTrainerTap = onTrainerTap,
+            onHrTap = onHrTap
         )
 
         Text("FTP: ${ftp}W", style = MaterialTheme.typography.labelLarge)
@@ -444,7 +505,8 @@ private fun IntervalRow(interval: WorkoutIntervalDef, displayAsPercent: Boolean 
 private fun ConnectionStatusChip(
     trainerConnected: Boolean,
     hrConnected: Boolean,
-    onRepair: () -> Unit
+    onTrainerTap: () -> Unit,
+    onHrTap: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -455,7 +517,7 @@ private fun ConnectionStatusChip(
             icon = Icons.Default.FitnessCenter,
             connectedLabel = "Trainer",
             disconnectedLabel = "Trainer",
-            onClick = onRepair,
+            onClick = onTrainerTap,
             modifier = Modifier.weight(1f)
         )
         DeviceStatusPill(
@@ -463,7 +525,7 @@ private fun ConnectionStatusChip(
             icon = if (hrConnected) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             connectedLabel = "HR",
             disconnectedLabel = "HR",
-            onClick = onRepair,
+            onClick = onHrTap,
             modifier = Modifier.weight(1f)
         )
     }
