@@ -15,6 +15,10 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Build
 import android.os.ParcelUuid
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
@@ -154,7 +158,39 @@ class BleManager(private val context: Context) {
     @Suppress("UNUSED_PARAMETER")
     private inline fun sampleLog(block: () -> String) { /* no-op */ }
 
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        val label = when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS              -> "LOSS (app fully lost focus — call started)"
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT    -> "LOSS_TRANSIENT (brief interruption)"
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> "LOSS_TRANSIENT_CAN_DUCK (duck volume)"
+            AudioManager.AUDIOFOCUS_GAIN              -> "GAIN (focus returned)"
+            else                                      -> "unknown($focusChange)"
+        }
+        Timber.tag("AUDIO").d("Audio focus change: $label")
+    }
+    private val audioFocusRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener(audioFocusListener)
+            .build()
+    } else null
+
     init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val result = audioManager.requestAudioFocus(audioFocusRequest!!)
+            Timber.tag("AUDIO").d("Audio focus requested: result=${if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) "GRANTED" else "DENIED($result)"}")
+        } else {
+            @Suppress("DEPRECATION")
+            val result = audioManager.requestAudioFocus(audioFocusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+            Timber.tag("AUDIO").d("Audio focus requested (legacy): result=${if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) "GRANTED" else "DENIED($result)"}")
+        }
+
         bleScope.launch {
             for (data in controlWriteQueue) {
                 when (_controlMode.value) {
@@ -639,12 +675,12 @@ class BleManager(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Timber.d( "Heart rate monitor connected")
+                    Timber.tag("BLE").d("Heart rate monitor connected (status=$status)")
                     _isHeartRateConnected.value = true
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Timber.d( "Heart rate monitor disconnected")
+                    Timber.tag("BLE").w("Heart rate monitor disconnected (status=$status)")
                     _isHeartRateConnected.value = false
                 }
             }
@@ -683,12 +719,12 @@ class BleManager(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Timber.d( "Power meter connected")
+                    Timber.tag("BLE").d("Power meter connected (status=$status)")
                     _isPowerMeterConnected.value = true
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Timber.d( "Power meter disconnected")
+                    Timber.tag("BLE").w("Power meter disconnected (status=$status)")
                     _isPowerMeterConnected.value = false
                 }
             }
@@ -1089,6 +1125,13 @@ class BleManager(private val context: Context) {
         disconnectHeartRateMonitor()
         disconnectPowerMeter()
         disconnectTrainer()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest!!)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusListener)
+        }
+        Timber.tag("AUDIO").d("Audio focus released (cleanup)")
     }
 }
 
