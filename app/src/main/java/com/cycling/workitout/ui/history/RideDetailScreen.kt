@@ -262,7 +262,7 @@ private fun StatsGrid(ride: Ride) {
         ride.normalizedPowerWatts.toFloat() / ride.ftpWatts
     } else 0f
     val durationMin = ride.durationSeconds / 60
-    val tss = (intensityFactor * intensityFactor * durationMin / 60f * 100f).toInt()
+    val tss = Math.round(intensityFactor * intensityFactor * durationMin / 60f * 100f)
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(

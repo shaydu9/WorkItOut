@@ -87,7 +87,7 @@ private fun RideCard(ride: Ride, onClick: () -> Unit) {
     val intensityFactor = if (ride.ftpWatts > 0) {
         ride.normalizedPowerWatts.toFloat() / ride.ftpWatts
     } else 0f
-    val tss = (intensityFactor * intensityFactor * durationMin / 60f * 100f).toInt()
+    val tss = Math.round(intensityFactor * intensityFactor * durationMin / 60f * 100f)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
