@@ -133,7 +133,7 @@ class SettingsViewModel(
                 }
                 themePreferences.setHasCompletedFirstRun(false)
             } catch (t: Throwable) {
-                Timber.e(t, "Account deletion failed")
+                Timber.tag("AUTH").e(t, "Account deletion failed")
             }
         }
     }
@@ -149,7 +149,7 @@ class SettingsViewModel(
             try {
                 userProfileRepository.uploadProfilePhoto(context, uri)
             } catch (t: Throwable) {
-                Timber.e(t, "Photo upload failed")
+                Timber.tag("AUTH").e(t, "Photo upload failed")
             }
         }
     }

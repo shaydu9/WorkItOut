@@ -23,14 +23,14 @@ class RetryInterceptor(
                     return response
                 }
                 val delayMs = retryDelayMs(response, attempt)
-                Timber.w("HTTP ${response.code} on ${request.url.encodedPath} — retrying in ${delayMs}ms (attempt ${attempt + 1}/$maxAttempts)")
+                Timber.tag("HTTP").w("HTTP ${response.code} on ${request.url.encodedPath} — retrying in ${delayMs}ms (attempt ${attempt + 1}/$maxAttempts)")
                 response.close()
                 sleep(delayMs)
             } catch (e: IOException) {
                 lastError = e
                 if (attempt == maxAttempts - 1) throw e
                 val delayMs = backoffMs(attempt)
-                Timber.w(e, "Network error on ${request.url.encodedPath} — retrying in ${delayMs}ms (attempt ${attempt + 1}/$maxAttempts)")
+                Timber.tag("HTTP").w(e, "Network error on ${request.url.encodedPath} — retrying in ${delayMs}ms (attempt ${attempt + 1}/$maxAttempts)")
                 sleep(delayMs)
             }
         }

@@ -55,7 +55,7 @@ class RideDetailViewModel(private val rideId: String) : ViewModel() {
             try {
                 _dataPoints.value = json.decodeFromString<List<CompactDataPoint>>(it.dataPointsJson)
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to parse data points for ride $rideId")
+                Timber.tag("WORKOUT").e(t, "Failed to parse data points for ride $rideId")
             }
         }
     }

@@ -89,7 +89,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                     .getResult(com.google.android.gms.common.api.ApiException::class.java)
                 account.idToken?.let { loginViewModel.signInWithGoogle(it) }
             } catch (e: com.google.android.gms.common.api.ApiException) {
-                Timber.w(e, "Google sign-in failed")
+                Timber.tag("AUTH").w(e, "Google sign-in failed")
             }
         }
 

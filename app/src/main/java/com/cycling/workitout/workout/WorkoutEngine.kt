@@ -66,14 +66,14 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             currentZone = firstInterval?.zone ?: com.cycling.workitout.data.PowerZone.Z1_RECOVERY
         )
 
-        Timber.d("Workout loaded: ${definition.name} (${definition.intervals.size} intervals, ${definition.totalDurationSeconds}s)")
+        Timber.tag("WORKOUT").d("Workout loaded: ${definition.name} (${definition.intervals.size} intervals, ${definition.totalDurationSeconds}s)")
     }
 
     fun start() {
         val w = workout ?: return
         if (_progress.value.workoutState == WorkoutState.RUNNING) return
 
-        Timber.d("Starting workout: ${w.name}")
+        Timber.tag("WORKOUT").d("Starting workout: ${w.name}")
 
         currentIntervalIndex = 0
         intervalStartTotalSeconds = 0
@@ -84,7 +84,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         lastSummaryAtSecond = 0
         synchronized(backingLock) { backing.clear() }
         _recordedData.value = emptyList()
-        Timber.i("▶ Workout start: ${w.name} — ${w.intervals.size} intervals, ${w.totalDurationSeconds / 60}:${"%02d".format(w.totalDurationSeconds % 60)} total")
+        Timber.tag("WORKOUT").i("▶ Workout start: ${w.name} — ${w.intervals.size} intervals, ${w.totalDurationSeconds / 60}:${"%02d".format(w.totalDurationSeconds % 60)} total")
 
         val firstInterval = w.intervals.first()
         onWorkoutStarted?.invoke()
@@ -97,7 +97,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     fun pause() {
         if (_progress.value.workoutState != WorkoutState.RUNNING) return
 
-        Timber.d("Pausing workout")
+        Timber.tag("WORKOUT").d("Pausing workout")
         tickJob?.cancel()
         tickJob = null
 
@@ -109,13 +109,13 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     fun resume() {
         if (_progress.value.workoutState != WorkoutState.PAUSED) return
 
-        Timber.d("Resuming workout")
+        Timber.tag("WORKOUT").d("Resuming workout")
         startTimeMillis = System.currentTimeMillis() - (pausedElapsedSeconds * 1000L)
         startTicking()
     }
 
     fun stop() {
-        Timber.d("Stopping workout")
+        Timber.tag("WORKOUT").d("Stopping workout")
         tickJob?.cancel()
         tickJob = null
 
@@ -215,7 +215,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
 
             val newInterval = w.intervals[currentIntervalIndex]
             onTargetPowerChanged?.invoke(newInterval.targetPowerWatts)
-            Timber.i("→ Interval ${currentIntervalIndex + 1}/${w.intervals.size}: ${newInterval.name} @ ${newInterval.targetPowerWatts}W (${newInterval.durationSeconds}s) [${fmtClock(totalElapsed)}]")
+            Timber.tag("WORKOUT").i("→ Interval ${currentIntervalIndex + 1}/${w.intervals.size}: ${newInterval.name} @ ${newInterval.targetPowerWatts}W (${newInterval.durationSeconds}s) [${fmtClock(totalElapsed)}]")
         }
 
         if (totalElapsed - lastSummaryAtSecond >= 60) {
@@ -240,13 +240,13 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         val avgHr = recent.mapNotNull { it.heartRate.takeIf { hr -> hr > 0 } }.average().let { if (it.isNaN()) 0 else it.toInt() }
         val avgCad = recent.mapNotNull { it.cadence.takeIf { c -> c > 0 } }.average().let { if (it.isNaN()) 0 else it.toInt() }
         val intervalName = _progress.value.currentIntervalName
-        Timber.i("⏱ ${fmtClock(totalElapsed)} [$intervalName] target=${target}W actual=${avgPower}W hr=${avgHr} cad=${avgCad}")
+        Timber.tag("WORKOUT").i("⏱ ${fmtClock(totalElapsed)} [$intervalName] target=${target}W actual=${avgPower}W hr=${avgHr} cad=${avgCad}")
     }
 
     private fun logFinalSummary(w: WorkoutDefinition) {
         val all: List<RecordedDataPoint> = synchronized(backingLock) { ArrayList(backing) }
         if (all.isEmpty()) {
-            Timber.i("■ Workout complete (no samples recorded)")
+            Timber.tag("WORKOUT").i("■ Workout complete (no samples recorded)")
             return
         }
         val powers = all.map { it.actualPower }.filter { it > 0 }
@@ -254,16 +254,16 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         val cads = all.map { it.cadence }.filter { it > 0 }
         val distance = all.last().distanceMeters
 
-        Timber.i("■ Workout complete: ${w.name}")
-        Timber.i("   duration=${fmtClock(w.totalDurationSeconds)} samples=${all.size} distance=${"%.2f".format(distance / 1000f)}km")
+        Timber.tag("WORKOUT").i("■ Workout complete: ${w.name}")
+        Timber.tag("WORKOUT").i("   duration=${fmtClock(w.totalDurationSeconds)} samples=${all.size} distance=${"%.2f".format(distance / 1000f)}km")
         if (powers.isNotEmpty()) {
-            Timber.i("   power: avg=${powers.average().toInt()}W max=${powers.max()}W")
+            Timber.tag("WORKOUT").i("   power: avg=${powers.average().toInt()}W max=${powers.max()}W")
         }
         if (hrs.isNotEmpty()) {
-            Timber.i("   hr: avg=${hrs.average().toInt()} max=${hrs.max()}")
+            Timber.tag("WORKOUT").i("   hr: avg=${hrs.average().toInt()} max=${hrs.max()}")
         }
         if (cads.isNotEmpty()) {
-            Timber.i("   cadence: avg=${cads.average().toInt()} max=${cads.max()}")
+            Timber.tag("WORKOUT").i("   cadence: avg=${cads.average().toInt()} max=${cads.max()}")
         }
 
         var cursor = 0
@@ -272,7 +272,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
             val slice = all.filter { it.timeSeconds in cursor until endSec }
             val sliceAvgP = slice.map { it.actualPower }.filter { it > 0 }.average().let { if (it.isNaN()) 0 else it.toInt() }
             val sliceAvgH = slice.map { it.heartRate }.filter { it > 0 }.average().let { if (it.isNaN()) 0 else it.toInt() }
-            Timber.i("   #${idx + 1} ${interval.name}: target=${interval.targetPowerWatts}W actual=${sliceAvgP}W hr=$sliceAvgH (${interval.durationSeconds}s)")
+            Timber.tag("WORKOUT").i("   #${idx + 1} ${interval.name}: target=${interval.targetPowerWatts}W actual=${sliceAvgP}W hr=$sliceAvgH (${interval.durationSeconds}s)")
             cursor = endSec
         }
     }

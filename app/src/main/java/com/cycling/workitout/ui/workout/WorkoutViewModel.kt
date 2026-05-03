@@ -210,7 +210,7 @@ class WorkoutViewModel(
                 if (firstTarget > 0) {
                     bleManager.requestFtmsControl(ergToken)
                     bleManager.setTargetPower(ergToken, firstTarget)
-                    Timber.i("Pre-sent first interval target $firstTarget W on screen entry")
+                    Timber.tag("ERG").i("Pre-sent first interval target $firstTarget W on screen entry")
                 }
             }
         }
@@ -241,7 +241,7 @@ class WorkoutViewModel(
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
                     bleManager.setTargetPower(ergToken, firstTarget)
-                    Timber.i("Startup: reopened burst for first target $firstTarget W")
+                    Timber.tag("ERG").i("Startup: reopened burst for first target $firstTarget W")
                 }
             }
             runStartupCountdown()
@@ -265,7 +265,7 @@ class WorkoutViewModel(
                     cadenceFlow.first { it == 0 }
                 }
                 if (stopped != null) {
-                    Timber.i("Startup countdown aborted at $sec — rider stopped pedaling")
+                    Timber.tag("ERG").i("Startup countdown aborted at $sec — rider stopped pedaling")
                     aborted = true
                     break
                 }
@@ -302,9 +302,9 @@ class WorkoutViewModel(
                     records = records
                 )
                 _exportState.value = ExportState.Ready(file)
-                Timber.i("Workout auto-exported to ${file.absolutePath}")
+                Timber.tag("FIT_EXPORT").i("Workout auto-exported to ${file.absolutePath}")
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to export .fit")
+                Timber.tag("FIT_EXPORT").e(t, "Failed to export .fit")
                 _exportState.value = ExportState.Failed(t.message ?: "Export failed")
             }
         }
@@ -358,27 +358,27 @@ class WorkoutViewModel(
                 )
                 val newId = WorkItOutApplication.rideRepository.saveRide(entity)
                 _savedRideId.value = newId
-                Timber.i("Ride saved to history: ${workout.name} (id=$newId)")
+                Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
 
                 val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
                 if (autoUpload && stravaRepository.isConnected.value) {
                     // Wait for the .fit export before uploading — otherwise OkHttp sends a partial file.
-                    Timber.i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
+                    Timber.tag("WORKOUT").i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
                     val terminal = withTimeoutOrNull(30_000L) {
                         exportState.first {
                             it is ExportState.Ready || it is ExportState.Failed
                         }
                     }
                     if (terminal is ExportState.Failed) {
-                        Timber.w("Silent export failed — auto-upload will regenerate the .fit")
+                        Timber.tag("WORKOUT").w("Silent export failed — auto-upload will regenerate the .fit")
                     } else if (terminal == null) {
-                        Timber.w("Timed out waiting for .fit export; uploader will regenerate")
+                        Timber.tag("WORKOUT").w("Timed out waiting for .fit export; uploader will regenerate")
                     }
-                    Timber.i("Kicking history upload for ride $newId")
+                    Timber.tag("WORKOUT").i("Kicking history upload for ride $newId")
                     WorkItOutApplication.historyStravaUploader.upload(newId)
                 }
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to save ride to history")
+                Timber.tag("WORKOUT").e(t, "Failed to save ride to history")
             }
         }
     }
@@ -436,12 +436,12 @@ class WorkoutViewModel(
                 rearmTimestamps.removeFirst()
             }
             if (rearmTimestamps.size >= maxRearmsPer30s) {
-                Timber.w("ERG watchdog: over budget ($maxRearmsPer30s rearms in 30s) — backing off")
+                Timber.tag("ERG").w("ERG watchdog: over budget ($maxRearmsPer30s rearms in 30s) — backing off")
                 consecutiveDeviationSec = 0
                 continue
             }
 
-            Timber.w("ERG watchdog: actual=${live.power}W target=${target}W (${(deviation * 100).toInt()}% off, ${consecutiveDeviationSec}s) — auto-rearming")
+            Timber.tag("ERG").w("ERG watchdog: actual=${live.power}W target=${target}W (${(deviation * 100).toInt()}% off, ${consecutiveDeviationSec}s) — auto-rearming")
             rearmTimestamps.addLast(now)
             lastRearmMs = now
             consecutiveDeviationSec = 0

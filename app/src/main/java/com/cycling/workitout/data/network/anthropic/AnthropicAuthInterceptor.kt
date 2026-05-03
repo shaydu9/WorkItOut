@@ -15,7 +15,7 @@ class AnthropicAuthInterceptor : Interceptor {
             try {
                 FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.token
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to fetch Firebase ID token")
+                Timber.tag("AI").e(t, "Failed to fetch Firebase ID token")
                 null
             }
         }

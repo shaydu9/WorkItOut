@@ -73,11 +73,11 @@ class LoginViewModel(
             }
             result
                 .onSuccess { user ->
-                    Timber.i("Auth success: uid=${user.uid}")
+                    Timber.tag("AUTH").i("Auth success: uid=${user.uid}")
                     _uiState.update { it.copy(isSubmitting = false) }
                 }
                 .onFailure { ex ->
-                    Timber.w(ex, "Auth failed")
+                    Timber.tag("AUTH").w(ex, "Auth failed")
                     _uiState.update {
                         it.copy(
                             isSubmitting = false,
@@ -96,11 +96,11 @@ class LoginViewModel(
         viewModelScope.launch {
             authRepository.signInAnonymously()
                 .onSuccess { user ->
-                    Timber.i("Anonymous sign-in success: uid=${user.uid}")
+                    Timber.tag("AUTH").i("Anonymous sign-in success: uid=${user.uid}")
                     _uiState.update { it.copy(isSubmitting = false) }
                 }
                 .onFailure { ex ->
-                    Timber.w(ex, "Anonymous sign-in failed")
+                    Timber.tag("AUTH").w(ex, "Anonymous sign-in failed")
                     _uiState.update {
                         it.copy(
                             isSubmitting = false,
@@ -119,11 +119,11 @@ class LoginViewModel(
         viewModelScope.launch {
             authRepository.signInWithGoogle(idToken)
                 .onSuccess { user ->
-                    Timber.i("Google sign-in success: uid=${user.uid}")
+                    Timber.tag("AUTH").i("Google sign-in success: uid=${user.uid}")
                     _uiState.update { it.copy(isSubmitting = false) }
                 }
                 .onFailure { ex ->
-                    Timber.w(ex, "google sign-in failed")
+                    Timber.tag("AUTH").w(ex, "google sign-in failed")
                     _uiState.update { it.copy(isSubmitting = false, errorMessage = messageFor(ex)) }
                 }
         }

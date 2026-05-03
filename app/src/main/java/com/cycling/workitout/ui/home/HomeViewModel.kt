@@ -99,7 +99,7 @@ class HomeViewModel(
                     ftp = ftp.value
                 )
             } catch (t: Throwable) {
-                Timber.w(t, "AI generation failed, using local fallback")
+                Timber.tag("AI").w(t, "AI generation failed, using local fallback")
                 _uiState.value = _uiState.value.copy(
                     error = "AI unavailable (${t.message}). Using local fallback."
                 )
@@ -133,7 +133,7 @@ class HomeViewModel(
                     customPromptText = ""
                 )
             } catch (t: Throwable) {
-                Timber.w(t, "AI custom generation failed")
+                Timber.tag("AI").w(t, "AI custom generation failed")
                 _uiState.value = _uiState.value.copy(
                     isGenerating = false,
                     error = t.message ?: "Failed to generate custom workout"
@@ -156,7 +156,7 @@ class HomeViewModel(
         val workout = _uiState.value.preview ?: return
         viewModelScope.launch {
             if (workoutRepository.existsByWorkoutId(workout.id)) {
-                Timber.d("Workout ${workout.id} already saved")
+                Timber.tag("WORKOUT").d("Workout ${workout.id} already saved")
                 return@launch
             }
             val entity = SavedWorkout(
@@ -176,7 +176,7 @@ class HomeViewModel(
                 })
             )
             workoutRepository.saveWorkout(entity)
-            Timber.i("Saved workout to library: ${workout.name}")
+            Timber.tag("WORKOUT").i("Saved workout to library: ${workout.name}")
         }
     }
 }

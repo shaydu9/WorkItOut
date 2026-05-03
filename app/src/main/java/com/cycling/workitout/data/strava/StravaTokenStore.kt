@@ -23,7 +23,7 @@ class StravaTokenStore(context: Context) {
     } catch (t: Throwable) {
         // Fallback to plain prefs only if the keystore is unusable (shouldn't happen
         // on real hardware). Better than crashing in Settings.
-        Timber.e(t, "EncryptedSharedPreferences init failed; falling back to plain")
+        Timber.tag("STRAVA").e(t, "EncryptedSharedPreferences init failed; falling back to plain")
         context.getSharedPreferences(FILE_NAME + "_plain", Context.MODE_PRIVATE)
     }
 

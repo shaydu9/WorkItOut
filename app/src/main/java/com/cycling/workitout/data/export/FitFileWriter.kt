@@ -197,7 +197,7 @@ object FitFileWriter {
             encoder.close()
         }
 
-        Timber.i("Wrote .fit file: ${outputFile.absolutePath} (${outputFile.length()} bytes, ${records.size} records)")
+        Timber.tag("FIT_EXPORT").i("Wrote .fit file: ${outputFile.absolutePath} (${outputFile.length()} bytes, ${records.size} records)")
         return outputFile
     }
 }

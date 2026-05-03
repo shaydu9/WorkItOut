@@ -42,7 +42,7 @@ class UserProfileRepository(
                         // Listener torn down by sign-out / account deletion — expected.
                         trySend(UserProfile())
                     } else {
-                        Timber.e(err, "profile listener error")
+                        Timber.tag("FIRESTORE").e(err, "profile listener error")
                     }
                     return@addSnapshotListener
                 }
@@ -98,7 +98,7 @@ class UserProfileRepository(
         try {
             firestore.collection("users").document(uid).set(fields, SetOptions.merge()).await()
         } catch (t: Throwable) {
-            Timber.e(t, "profile patch failed")
+            Timber.tag("FIRESTORE").e(t, "profile patch failed")
         }
     }
 

@@ -61,10 +61,10 @@ class HistoryStravaUploader(
             try {
                 val fitPath = WorkoutExporter.fitFileFor(appContext, ride.startedAtMillis)
                 val fitFile = if (fitPath.exists()) {
-                    Timber.d("Using existing .fit for history upload: ${fitPath.name}")
+                    Timber.tag("STRAVA").d("Using existing .fit for history upload: ${fitPath.name}")
                     fitPath
                 } else {
-                    Timber.d("Regenerating .fit from stored samples for ride $rideId")
+                    Timber.tag("STRAVA").d("Regenerating .fit from stored samples for ride $rideId")
                     val weight = themePreferences.userWeightKg.first()
                     WorkoutExporter.exportFromHistory(appContext, ride, weight)
                 }
@@ -77,9 +77,9 @@ class HistoryStravaUploader(
                     System.currentTimeMillis()
                 )
                 flow.value = UploadState.Success(activityId)
-                Timber.i("Strava history upload ok: ride=$rideId activity=$activityId")
+                Timber.tag("STRAVA").i("Strava history upload ok: ride=$rideId activity=$activityId")
             } catch (t: Throwable) {
-                Timber.e(t, "Strava history upload failed for ride $rideId")
+                Timber.tag("STRAVA").e(t, "Strava history upload failed for ride $rideId")
                 flow.value = UploadState.Failed(t.message ?: "Upload failed")
             }
         }

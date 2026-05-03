@@ -68,7 +68,7 @@ class LibraryViewModel(
     fun saveToLibrary(workout: WorkoutDefinition) {
         viewModelScope.launch {
             if (workoutRepository.existsByWorkoutId(workout.id)) {
-                Timber.d("Workout ${workout.id} already in library")
+                Timber.tag("WORKOUT").d("Workout ${workout.id} already in library")
                 return@launch
             }
             val entity = SavedWorkout(
@@ -88,7 +88,7 @@ class LibraryViewModel(
                 })
             )
             workoutRepository.saveWorkout(entity)
-            Timber.i("Saved starter workout to library: ${workout.name}")
+            Timber.tag("WORKOUT").i("Saved starter workout to library: ${workout.name}")
         }
     }
 

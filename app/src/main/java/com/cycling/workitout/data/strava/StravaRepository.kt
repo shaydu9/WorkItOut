@@ -58,11 +58,11 @@ class StravaRepository(context: Context) {
         val code = uri.getQueryParameter("code")
         val error = uri.getQueryParameter("error")
         if (!error.isNullOrBlank()) {
-            Timber.w("Strava auth cancelled/denied: $error")
+            Timber.tag("STRAVA").w("Strava auth cancelled/denied: $error")
             return
         }
         if (code.isNullOrBlank()) {
-            Timber.w("Strava callback missing code: $uri")
+            Timber.tag("STRAVA").w("Strava callback missing code: $uri")
             return
         }
         scope.launch {
@@ -70,9 +70,9 @@ class StravaRepository(context: Context) {
                 client.exchangeCode(code)
                 _isConnected.value = true
                 _athleteName.value = tokens.athleteName
-                Timber.i("Strava connected as ${tokens.athleteName}")
+                Timber.tag("STRAVA").i("Strava connected as ${tokens.athleteName}")
             } catch (t: Throwable) {
-                Timber.e(t, "Strava code exchange failed")
+                Timber.tag("STRAVA").e(t, "Strava code exchange failed")
             }
         }
     }
@@ -102,7 +102,7 @@ class StravaRepository(context: Context) {
                 val activityId = client.uploadFit(file, workoutName)
                 _uploadState.value = UploadState.Success(activityId)
             } catch (t: Throwable) {
-                Timber.e(t, "Strava upload failed")
+                Timber.tag("STRAVA").e(t, "Strava upload failed")
                 _uploadState.value = UploadState.Failed(t.message ?: "Upload failed")
             }
         }

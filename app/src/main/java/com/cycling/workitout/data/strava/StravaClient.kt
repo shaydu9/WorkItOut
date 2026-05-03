@@ -84,10 +84,10 @@ class StravaClient(
             val poll = api.pollUpload(uploadId)
             poll.error?.let { throw RuntimeException("Strava upload failed: $it") }
             if (poll.activityId != null && poll.activityId > 0) {
-                Timber.i("Strava upload complete → activity ${poll.activityId}")
+                Timber.tag("STRAVA").i("Strava upload complete → activity ${poll.activityId}")
                 return@withContext poll.activityId
             }
-            Timber.d("Strava upload pending (attempt ${attempt + 1}): ${poll.status}")
+            Timber.tag("STRAVA").d("Strava upload pending (attempt ${attempt + 1}): ${poll.status}")
         }
         throw RuntimeException("Strava upload timed out after 30s")
     }
@@ -110,7 +110,7 @@ class StravaClient(
             FirebaseAuth.getInstance().currentUser
                 ?.getIdToken(false)?.await()?.token.orEmpty()
         } catch (t: Throwable) {
-            Timber.e(t, "Failed to fetch Firebase ID token for Strava call")
+            Timber.tag("STRAVA").e(t, "Failed to fetch Firebase ID token for Strava call")
             ""
         }
     }

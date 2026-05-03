@@ -113,7 +113,7 @@ class AiWorkoutService(
                 val result = buildWorkoutOrNull(dto, ftp, expectedTotalSec)
                 if (result.workout != null) return@withContext result.workout
                 lastError = result.rejectionReason
-                Timber.w("AI workout attempt $attempt rejected: $lastError")
+                Timber.tag("AI").w("AI workout attempt $attempt rejected: $lastError")
             }
         }
         throw IllegalStateException("Claude returned an invalid workout twice: $lastError")
@@ -136,19 +136,19 @@ class AiWorkoutService(
             anthropicApi.createMessage(request)
         } catch (e: HttpException) {
             val errorBody = runCatching { e.response()?.errorBody()?.string() }.getOrNull()
-            Timber.w(e, "Anthropic request failed: HTTP ${e.code()} body=$errorBody")
+            Timber.tag("AI").w(e, "Anthropic request failed: HTTP ${e.code()} body=$errorBody")
             throw e
         }
         val text = response.content.firstOrNull { it.type == "text" }?.text.orEmpty()
-        Timber.d("AI raw text: $text")
+        Timber.tag("AI").d("AI raw text: $text")
 
         val jsonText = extractJsonObject(text) ?: return null
-        Timber.d("AI workout JSON: $jsonText")
+        Timber.tag("AI").d("AI workout JSON: $jsonText")
 
         return try {
             json.decodeFromString(AiWorkoutDto.serializer(), jsonText)
         } catch (t: Throwable) {
-            Timber.w(t, "AI JSON failed to decode")
+            Timber.tag("AI").w(t, "AI JSON failed to decode")
             null
         }
     }
@@ -210,8 +210,8 @@ class AiWorkoutService(
                 zone = parseZone(i.zone)
             )
         }.toMutableList()
-        if (clampedTarget > 0) Timber.w("AI validation: clamped $clampedTarget out-of-range interval targetPct values")
-        if (clampedDuration > 0) Timber.w("AI validation: clamped $clampedDuration out-of-range interval durations")
+        if (clampedTarget > 0) Timber.tag("AI").w("AI validation: clamped $clampedTarget out-of-range interval targetPct values")
+        if (clampedDuration > 0) Timber.tag("AI").w("AI validation: clamped $clampedDuration out-of-range interval durations")
 
         // Duration-sum reconciliation (only when the caller asked for a specific total).
         if (expectedTotalSec != null) {
@@ -224,7 +224,7 @@ class AiWorkoutService(
                     return BuildResult(null, "total duration ${sum}s differs from requested ${expectedTotalSec}s by ${(driftRatio * 100).roundToInt()}%")
                 }
                 sum != expectedTotalSec -> {
-                    Timber.w("AI validation: rescaling ${sum}s → ${expectedTotalSec}s (drift ${(driftRatio * 100).roundToInt()}%)")
+                    Timber.tag("AI").w("AI validation: rescaling ${sum}s → ${expectedTotalSec}s (drift ${(driftRatio * 100).roundToInt()}%)")
                     val scale = expectedTotalSec.toDouble() / sum
                     for (idx in intervals.indices) {
                         intervals[idx] = intervals[idx].copy(

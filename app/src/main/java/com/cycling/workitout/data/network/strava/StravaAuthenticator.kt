@@ -20,7 +20,7 @@ class StravaAuthenticator(
     override fun authenticate(route: Route?, response: Response): Request? {
         // Already retried once → give up rather than loop forever.
         if (responseCount(response) >= 2) {
-            Timber.w("Strava auth: already retried once, giving up")
+            Timber.tag("STRAVA").w("Strava auth: already retried once, giving up")
             return null
         }
 
@@ -32,7 +32,7 @@ class StravaAuthenticator(
 
         val refresh = tokenStore.refreshToken
         if (refresh.isNullOrBlank()) {
-            Timber.w("Strava auth: no refresh token stored — user must reconnect")
+            Timber.tag("STRAVA").w("Strava auth: no refresh token stored — user must reconnect")
             return null
         }
 
@@ -50,11 +50,11 @@ class StravaAuthenticator(
                 resp.accessToken
             }
         } catch (t: Throwable) {
-            Timber.e(t, "Strava token refresh failed")
+            Timber.tag("STRAVA").e(t, "Strava token refresh failed")
             return null
         }
 
-        Timber.d("Strava auth: refreshed access token, retrying original request")
+        Timber.tag("STRAVA").d("Strava auth: refreshed access token, retrying original request")
         return response.request.newBuilder()
             .header("Authorization", "Bearer $newAccessToken")
             .build()

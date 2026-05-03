@@ -196,7 +196,7 @@ class BleManager(private val context: Context) {
                 when (_controlMode.value) {
                     ControlMode.FTMS -> doFtmsWrite(data)
                     ControlMode.FEC  -> doFecWrite(data)
-                    ControlMode.NONE -> Timber.w("Control write dropped — no trainer control mode")
+                    ControlMode.NONE -> Timber.tag("ERG").w("Control write dropped — no trainer control mode")
                 }
             }
         }
@@ -212,12 +212,12 @@ class BleManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startScan() {
         if (_isScanning.value) {
-            Timber.d( "Already scanning")
+            Timber.tag("BLE").d( "Already scanning")
             return
         }
         
         if (!isBluetoothEnabled()) {
-            Timber.e( "Bluetooth is not enabled")
+            Timber.tag("BLE").e( "Bluetooth is not enabled")
             return
         }
         
@@ -241,7 +241,7 @@ class BleManager(private val context: Context) {
         
         bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
         _isScanning.value = true
-        Timber.d( "Started BLE scan")
+        Timber.tag("BLE").d( "Started BLE scan")
     }
     
     @SuppressLint("MissingPermission")
@@ -250,7 +250,7 @@ class BleManager(private val context: Context) {
         
         bluetoothLeScanner?.stopScan(scanCallback)
         _isScanning.value = false
-        Timber.d( "Stopped BLE scan")
+        Timber.tag("BLE").d( "Stopped BLE scan")
     }
     
     private val scanCallback = object : ScanCallback() {
@@ -285,12 +285,12 @@ class BleManager(private val context: Context) {
             if (currentDevices.none { it.address == deviceAddress }) {
                 currentDevices.add(bleDevice)
                 _discoveredDevices.value = currentDevices
-                Timber.d( "Discovered device: $deviceName ($deviceType)")
+                Timber.tag("BLE").d( "Discovered device: $deviceName ($deviceType)")
             }
         }
         
         override fun onScanFailed(errorCode: Int) {
-            Timber.e( "Scan failed with error: $errorCode")
+            Timber.tag("BLE").e( "Scan failed with error: $errorCode")
             _isScanning.value = false
         }
     }
@@ -298,25 +298,25 @@ class BleManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun connectHeartRateMonitor(bleDevice: BleDevice) {
         if (bleDevice.deviceType != DeviceType.HEART_RATE_MONITOR) {
-            Timber.e( "Device is not a heart rate monitor")
+            Timber.tag("BLE").e( "Device is not a heart rate monitor")
             return
         }
         
         heartRateGatt?.close()
         heartRateGatt = bleDevice.device.connectGatt(context, false, heartRateGattCallback)
-        Timber.d( "Connecting to heart rate monitor: ${bleDevice.name}")
+        Timber.tag("BLE").d( "Connecting to heart rate monitor: ${bleDevice.name}")
     }
     
     @SuppressLint("MissingPermission")
     fun connectPowerMeter(bleDevice: BleDevice) {
         if (bleDevice.deviceType != DeviceType.POWER_METER) {
-            Timber.e( "Device is not a power meter")
+            Timber.tag("BLE").e( "Device is not a power meter")
             return
         }
         
         powerMeterGatt?.close()
         powerMeterGatt = bleDevice.device.connectGatt(context, false, powerMeterGattCallback)
-        Timber.d( "Connecting to power meter: ${bleDevice.name}")
+        Timber.tag("BLE").d( "Connecting to power meter: ${bleDevice.name}")
     }
     
     @SuppressLint("MissingPermission")
@@ -326,12 +326,12 @@ class BleManager(private val context: Context) {
             if (device != null) {
                 heartRateGatt?.close()
                 heartRateGatt = device.connectGatt(context, false, heartRateGattCallback)
-                Timber.d( "Reconnecting to heart rate monitor: $macAddress")
+                Timber.tag("BLE").d( "Reconnecting to heart rate monitor: $macAddress")
             } else {
-                Timber.e( "Bluetooth adapter not available")
+                Timber.tag("BLE").e( "Bluetooth adapter not available")
             }
         } catch (e: IllegalArgumentException) {
-            Timber.e( "Invalid MAC address: $macAddress", e)
+            Timber.tag("BLE").e( "Invalid MAC address: $macAddress", e)
         }
     }
     
@@ -342,12 +342,12 @@ class BleManager(private val context: Context) {
             if (device != null) {
                 powerMeterGatt?.close()
                 powerMeterGatt = device.connectGatt(context, false, powerMeterGattCallback)
-                Timber.d( "Reconnecting to power meter: $macAddress")
+                Timber.tag("BLE").d( "Reconnecting to power meter: $macAddress")
             } else {
-                Timber.e( "Bluetooth adapter not available")
+                Timber.tag("BLE").e( "Bluetooth adapter not available")
             }
         } catch (e: IllegalArgumentException) {
-            Timber.e( "Invalid MAC address: $macAddress", e)
+            Timber.tag("BLE").e( "Invalid MAC address: $macAddress", e)
         }
     }
     
@@ -357,7 +357,7 @@ class BleManager(private val context: Context) {
         heartRateGatt?.close()
         heartRateGatt = null
         _isHeartRateConnected.value = false
-        Timber.d( "Disconnected heart rate monitor")
+        Timber.tag("BLE").d( "Disconnected heart rate monitor")
     }
     
     @SuppressLint("MissingPermission")
@@ -370,19 +370,19 @@ class BleManager(private val context: Context) {
         previousCrankRevolutions = 0
         previousCrankEventTime = 0
         powerSmoother.clear()
-        Timber.d( "Disconnected power meter")
+        Timber.tag("BLE").d( "Disconnected power meter")
     }
     
     @SuppressLint("MissingPermission")
     fun connectTrainer(bleDevice: BleDevice) {
         if (bleDevice.deviceType != DeviceType.SMART_TRAINER) {
-            Timber.e("Device is not a smart trainer")
+            Timber.tag("BLE").e("Device is not a smart trainer")
             return
         }
 
         trainerGatt?.close()
         trainerGatt = bleDevice.device.connectGatt(context, false, trainerGattCallback)
-        Timber.d("Connecting to smart trainer: ${bleDevice.name}")
+        Timber.tag("BLE").d("Connecting to smart trainer: ${bleDevice.name}")
     }
 
     @SuppressLint("MissingPermission")
@@ -392,12 +392,12 @@ class BleManager(private val context: Context) {
             if (device != null) {
                 trainerGatt?.close()
                 trainerGatt = device.connectGatt(context, false, trainerGattCallback)
-                Timber.d("Reconnecting to smart trainer: $macAddress")
+                Timber.tag("BLE").d("Reconnecting to smart trainer: $macAddress")
             } else {
-                Timber.e("Bluetooth adapter not available")
+                Timber.tag("BLE").e("Bluetooth adapter not available")
             }
         } catch (e: IllegalArgumentException) {
-            Timber.e("Invalid MAC address: $macAddress", e)
+            Timber.tag("BLE").e("Invalid MAC address: $macAddress", e)
         }
     }
 
@@ -422,7 +422,7 @@ class BleManager(private val context: Context) {
         previousCrankRevolutions = 0
         previousCrankEventTime = 0
         powerSmoother.clear()
-        Timber.d("Disconnected smart trainer")
+        Timber.tag("BLE").d("Disconnected smart trainer")
     }
 
     // FE-C doesn't need a control handshake — Page 49 frames are accepted directly.
@@ -433,8 +433,8 @@ class BleManager(private val context: Context) {
         }
         when (_controlMode.value) {
             ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_REQUEST_CONTROL))
-            ControlMode.FEC  -> Timber.d("FE-C control: requestControl is implicit — skipping")
-            ControlMode.NONE -> Timber.w("requestFtmsControl dropped — no control mode")
+            ControlMode.FEC  -> Timber.tag("ERG").d("FE-C control: requestControl is implicit — skipping")
+            ControlMode.NONE -> Timber.tag("ERG").w("requestFtmsControl dropped — no control mode")
         }
     }
 
@@ -446,8 +446,8 @@ class BleManager(private val context: Context) {
         }
         when (_controlMode.value) {
             ControlMode.FTMS -> enqueueControlWrite(byteArrayOf(BleConstants.FTMS_START_RESUME))
-            ControlMode.FEC  -> Timber.d("FE-C control: start is implicit — skipping")
-            ControlMode.NONE -> Timber.w("startFtmsWorkout dropped — no control mode")
+            ControlMode.FEC  -> Timber.tag("ERG").d("FE-C control: start is implicit — skipping")
+            ControlMode.NONE -> Timber.tag("ERG").w("startFtmsWorkout dropped — no control mode")
         }
     }
 
@@ -469,9 +469,9 @@ class BleManager(private val context: Context) {
                 stopFecResender()
                 currentFecTargetWatts = null
                 enqueueControlWrite(TacxFecClient.buildTargetPowerFrame(0))
-                Timber.d("FE-C control: stopped resend and sent Page 49 target=0W")
+                Timber.tag("ERG").d("FE-C control: stopped resend and sent Page 49 target=0W")
             }
-            ControlMode.NONE -> Timber.w("stopFtmsWorkout dropped — no control mode")
+            ControlMode.NONE -> Timber.tag("ERG").w("stopFtmsWorkout dropped — no control mode")
         }
     }
 
@@ -488,16 +488,16 @@ class BleManager(private val context: Context) {
                     ((watts shr 8) and 0xFF).toByte()
                 )
                 enqueueControlWrite(data)
-                Timber.d("FTMS setTargetPower: $watts W")
+                Timber.tag("ERG").d("FTMS setTargetPower: $watts W")
             }
             ControlMode.FEC -> {
                 currentFecTargetWatts = watts
                 val frame = TacxFecClient.buildTargetPowerFrame(watts)
                 enqueueControlWrite(frame)
                 ensureFecResender()
-                Timber.d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B) — steady 3 Hz")
+                Timber.tag("ERG").d("TacxFec setTargetPower: $watts W (Page 49, ${frame.size}B) — steady 3 Hz")
             }
-            ControlMode.NONE -> Timber.w("setTargetPower($watts) dropped — no control mode")
+            ControlMode.NONE -> Timber.tag("ERG").w("setTargetPower($watts) dropped — no control mode")
         }
     }
 
@@ -510,15 +510,15 @@ class BleManager(private val context: Context) {
     private fun enqueueControlWrite(data: ByteArray) {
         when (_controlMode.value) {
             ControlMode.FTMS -> if (ftmsControlPointChar == null || trainerGatt == null) {
-                Timber.w("FTMS control point not available — dropping opcode 0x${data[0].toString(16).padStart(2,'0')}")
+                Timber.tag("ERG").w("FTMS control point not available — dropping opcode 0x${data[0].toString(16).padStart(2,'0')}")
                 return
             }
             ControlMode.FEC -> if (fecWriteChar == null || trainerGatt == null) {
-                Timber.w("FE-C write char not available — dropping frame")
+                Timber.tag("ERG").w("FE-C write char not available — dropping frame")
                 return
             }
             ControlMode.NONE -> {
-                Timber.w("No control mode — dropping write")
+                Timber.tag("ERG").w("No control mode — dropping write")
                 return
             }
         }
@@ -534,7 +534,7 @@ class BleManager(private val context: Context) {
         char.value = data
         val queued = gatt.writeCharacteristic(char)
         if (!queued) {
-            Timber.w("FTMS writeCharacteristic returned false for opcode 0x${data[0].toString(16).padStart(2,'0')}")
+            Timber.tag("ERG").w("FTMS writeCharacteristic returned false for opcode 0x${data[0].toString(16).padStart(2,'0')}")
             pendingWriteAck = null
             return
         }
@@ -579,7 +579,7 @@ class BleManager(private val context: Context) {
                 val dOk = ok - prevOk
                 val dFail = fail - prevFail
                 prevOk = ok; prevFail = fail
-                Timber.i("FE-C health (30s): writes ok=$dOk fail=$dFail target=${currentFecTargetWatts}W")
+                Timber.tag("ERG").i("FE-C health (30s): writes ok=$dOk fail=$dFail target=${currentFecTargetWatts}W")
             }
         }
     }
@@ -600,7 +600,7 @@ class BleManager(private val context: Context) {
 
     fun setPowerSmoothingWindow(seconds: Int) {
         powerSmoother.setSmoothingWindow(seconds)
-        Timber.d( "Power smoothing window set to $seconds seconds")
+        Timber.tag("BLE").d( "Power smoothing window set to $seconds seconds")
     }
     
     fun getPowerSmoothingWindow(): Int {
@@ -609,7 +609,7 @@ class BleManager(private val context: Context) {
     
     fun enableDemoMode() {
         if (_isDemoMode.value) return
-        Timber.d( "Enabling demo mode")
+        Timber.tag("BLE").d( "Enabling demo mode")
         _isDemoMode.value = true
         _isHeartRateConnected.value = true
         _isPowerMeterConnected.value = true
@@ -633,7 +633,7 @@ class BleManager(private val context: Context) {
 
     fun disableDemoMode() {
         if (!_isDemoMode.value) return
-        Timber.d( "Disabling demo mode")
+        Timber.tag("BLE").d( "Disabling demo mode")
         _isDemoMode.value = false
         mockDataGenerator.stop()
         _isHeartRateConnected.value = false
@@ -699,7 +699,7 @@ class BleManager(private val context: Context) {
                     descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
                     
-                    Timber.d( "Enabled heart rate notifications")
+                    Timber.tag("BLE").d( "Enabled heart rate notifications")
                 }
             }
         }
@@ -743,7 +743,7 @@ class BleManager(private val context: Context) {
                     descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
                     
-                    Timber.d( "Enabled power meter notifications")
+                    Timber.tag("BLE").d( "Enabled power meter notifications")
                 }
             }
         }
@@ -763,7 +763,7 @@ class BleManager(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Timber.d("Smart trainer connected")
+                    Timber.tag("BLE").d("Smart trainer connected")
                     _isTrainerConnected.value = true
                     // Trainers are also the power/cadence source — flag so the UI shows power as connected.
                     _isPowerMeterConnected.value = true
@@ -781,7 +781,7 @@ class BleManager(private val context: Context) {
                         133 -> "133 (GATT_ERROR — generic radio failure, often range)"
                         else -> "$status"
                     }
-                    Timber.w("Smart trainer disconnected: status=$reason")
+                    Timber.tag("BLE").w("Smart trainer disconnected: status=$reason")
                     _isTrainerConnected.value = false
                     _isPowerMeterConnected.value = false
                     _trainerControlAvailable.value = false
@@ -798,18 +798,18 @@ class BleManager(private val context: Context) {
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                Timber.e("Trainer service discovery failed with status $status")
+                Timber.tag("BLE").e("Trainer service discovery failed with status $status")
                 return
             }
 
             val allServices = gatt.services.map { it.uuid.toString() }
-            Timber.i("Trainer services discovered (${allServices.size}): $allServices")
+            Timber.tag("BLE").i("Trainer services discovered (${allServices.size}): $allServices")
 
             val ftmsService = gatt.getService(BleConstants.FITNESS_MACHINE_SERVICE_UUID)
             val cpsService = gatt.getService(BleConstants.CYCLING_POWER_SERVICE_UUID)
 
             if (ftmsService != null) {
-                Timber.i("FTMS service found — using Indoor Bike Data + Control Point")
+                Timber.tag("BLE").i("FTMS service found — using Indoor Bike Data + Control Point")
                 _controlMode.value = ControlMode.FTMS
 
                 ftmsService.getCharacteristic(BleConstants.INDOOR_BIKE_DATA_CHAR_UUID)?.let { char ->
@@ -817,14 +817,14 @@ class BleManager(private val context: Context) {
                     val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
                     descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     gatt.writeDescriptor(descriptor)
-                    Timber.d("Enabled Indoor Bike Data notifications")
+                    Timber.tag("BLE").d("Enabled Indoor Bike Data notifications")
                 }
 
                 ftmsService.getCharacteristic(BleConstants.FTMS_CONTROL_POINT_CHAR_UUID)?.let { char ->
                     ftmsControlPointChar = char
                     _trainerControlAvailable.value = true
                     gatt.setCharacteristicNotification(char, true)
-                    Timber.d("FTMS Control Point cached, indications pending")
+                    Timber.tag("ERG").d("FTMS Control Point cached, indications pending")
                 }
             } else {
                 // No FTMS — try Tacx FE-C over BLE; power/cadence still come from CPS.
@@ -835,12 +835,12 @@ class BleManager(private val context: Context) {
                         fecWriteChar = writeChar
                         _controlMode.value = ControlMode.FEC
                         _trainerControlAvailable.value = true
-                        Timber.i("Tacx FE-C over BLE detected — ERG via ANT+ Page 49 on ${writeChar.uuid}")
+                        Timber.tag("ERG").i("Tacx FE-C over BLE detected — ERG via ANT+ Page 49 on ${writeChar.uuid}")
                     } else {
-                        Timber.w("Tacx FE-C service found but write char (6e40fec3) missing")
+                        Timber.tag("ERG").w("Tacx FE-C service found but write char (6e40fec3) missing")
                     }
                 } else {
-                    Timber.w("FTMS not found and no Tacx FE-C service — read-only (no ERG control)")
+                    Timber.tag("ERG").w("FTMS not found and no Tacx FE-C service — read-only (no ERG control)")
                 }
 
                 // Regardless of control path, subscribe to CPS for power + cadence.
@@ -850,25 +850,25 @@ class BleManager(private val context: Context) {
                         val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
                         descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                         gatt.writeDescriptor(descriptor)
-                        Timber.d("Enabled Cycling Power notifications (CPS data path)")
+                        Timber.tag("BLE").d("Enabled Cycling Power notifications (CPS data path)")
                     }
                     // CSC subscription chains via onDescriptorWrite below.
                 } else {
-                    Timber.e("Trainer exposes neither FTMS nor CPS — power/cadence unavailable")
+                    Timber.tag("BLE").e("Trainer exposes neither FTMS nor CPS — power/cadence unavailable")
                 }
             }
         }
 
         @SuppressLint("MissingPermission")
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-            Timber.d("Trainer descriptor write: char=${descriptor.characteristic.uuid}, status=$status")
+            Timber.tag("BLE").d("Trainer descriptor write: char=${descriptor.characteristic.uuid}, status=$status")
 
             if (descriptor.characteristic.uuid == BleConstants.INDOOR_BIKE_DATA_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
                 ftmsControlPointChar?.let { cpChar ->
                     val cpDescriptor = cpChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
                     cpDescriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
                     val written = gatt.writeDescriptor(cpDescriptor)
-                    Timber.d("Writing FTMS Control Point indication descriptor: $written")
+                    Timber.tag("ERG").d("Writing FTMS Control Point indication descriptor: $written")
                 }
             }
 
@@ -901,7 +901,7 @@ class BleManager(private val context: Context) {
                 BleConstants.FTMS_CONTROL_POINT_CHAR_UUID -> {
                     val value = characteristic.value ?: return
                     if (value.isNotEmpty()) {
-                        Timber.d("FTMS Control Point response: opcode=0x${value[0].toString(16)}")
+                        Timber.tag("ERG").d("FTMS Control Point response: opcode=0x${value[0].toString(16)}")
                     }
                 }
                 BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID -> {
@@ -997,7 +997,7 @@ class BleManager(private val context: Context) {
         val value = characteristic.value ?: return Pair(0, 0)
 
         if (value.size < 4) {
-            Timber.w( "Power measurement data too short: ${value.size} bytes")
+            Timber.tag("BLE").w( "Power measurement data too short: ${value.size} bytes")
             return Pair(0, 0)
         }
 
@@ -1026,7 +1026,7 @@ class BleManager(private val context: Context) {
                 if (timeDelta > 0) {
                     cadence = ((revolutionsDelta * 60 * 1024) / timeDelta).toInt()
                     if (cadence < 0 || cadence > 250) {
-                        Timber.w( "Cadence out of range: $cadence, resetting")
+                        Timber.tag("BLE").w( "Cadence out of range: $cadence, resetting")
                         cadence = 0
                     }
                 }
@@ -1060,13 +1060,13 @@ class BleManager(private val context: Context) {
     private fun subscribeToCSC(gatt: BluetoothGatt) {
         val cscService = gatt.getService(BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID)
         if (cscService == null) {
-            Timber.d("CSC service (0x1816) not found on trainer — cadence from CPS only")
+            Timber.tag("BLE").d("CSC service (0x1816) not found on trainer — cadence from CPS only")
             return
         }
 
         val cscChar = cscService.getCharacteristic(BleConstants.CSC_MEASUREMENT_CHAR_UUID)
         if (cscChar == null) {
-            Timber.w("CSC Measurement characteristic not found")
+            Timber.tag("BLE").w("CSC Measurement characteristic not found")
             return
         }
 
@@ -1074,7 +1074,7 @@ class BleManager(private val context: Context) {
         val descriptor = cscChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
         descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         val written = gatt.writeDescriptor(descriptor)
-        Timber.i("Subscribed to CSC Measurement for cadence: written=$written")
+        Timber.tag("BLE").i("Subscribed to CSC Measurement for cadence: written=$written")
     }
 
     // Returns cadence in RPM from the CSC characteristic, or -1 if not yet calculable.

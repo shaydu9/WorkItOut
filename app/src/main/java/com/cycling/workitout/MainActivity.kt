@@ -50,12 +50,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val saved = WorkItOutApplication.deviceRepository.getAllDevices().first()
             saved.forEach { device ->
-                Timber.d("Auto-reconnecting ${device.deviceType} ${device.macAddress}")
+                Timber.tag("BLE").d("Auto-reconnecting ${device.deviceType} ${device.macAddress}")
                 when (device.deviceType) {
                     DeviceType.HEART_RATE_MONITOR -> bleManager.reconnectHeartRateMonitor(device.macAddress)
                     DeviceType.SMART_TRAINER -> bleManager.reconnectTrainer(device.macAddress)
                     DeviceType.POWER_METER -> bleManager.reconnectPowerMeter(device.macAddress)
-                    else -> Timber.d("No reconnect path for ${device.deviceType}")
+                    else -> Timber.tag("BLE").d("No reconnect path for ${device.deviceType}")
                 }
             }
         }
@@ -82,11 +82,11 @@ class MainActivity : ComponentActivity() {
             data.host == "workitout" &&
             data.path?.startsWith("/strava-callback") == true
         ) {
-            Timber.i("Strava OAuth callback received")
+            Timber.tag("STRAVA").i("Strava OAuth callback received")
             WorkItOutApplication.stravaRepository.handleAuthCallback(data)
         } else if (intent.action == Intent.ACTION_VIEW) {
             // Sanity log — we got a VIEW action but the URI isn't ours. Rare.
-            Timber.d("Ignoring non-Strava VIEW intent: $data (expected ${StravaClient.REDIRECT_URI})")
+            Timber.tag("STRAVA").d("Ignoring non-Strava VIEW intent: $data (expected ${StravaClient.REDIRECT_URI})")
         }
     }
 

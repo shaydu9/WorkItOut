@@ -54,7 +54,7 @@ class WorkItOutApplication : Application() {
             FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(true)
             Timber.plant(CrashlyticsTree())
         }
-        Timber.i("🚴 WorkItOut application started")
+        Timber.tag("APP").i("🚴 WorkItOut application started")
 
         database = WorkItOutDatabase.getDatabase(applicationContext)
         authRepository = AuthRepository()
@@ -71,6 +71,6 @@ class WorkItOutApplication : Application() {
         workoutRepository = WorkoutRepository()
         userProfileRepository = UserProfileRepository(themePreferences = themePreferences)
 
-        Timber.i("Auth ready: currentUser=${authRepository.currentUser.value}")
+        Timber.tag("APP").i("Auth ready: currentUser=${authRepository.currentUser.value}")
     }
 }
