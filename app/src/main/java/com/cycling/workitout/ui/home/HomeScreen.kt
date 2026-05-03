@@ -52,6 +52,9 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
+    LaunchedEffect(ftp) {
+        timber.log.Timber.tag("FTP_DEBUG").d("ftp state updated: ${ftp}W")
+    }
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
     val isDemoMode by viewModel.isDemoMode.collectAsStateWithLifecycle()
