@@ -106,60 +106,100 @@ fun FirstRunPairingScreen(
             TopAppBar(title = { Text("Get Started") })
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-        ) {
-            StepIndicator(currentStep = step)
-            Spacer(Modifier.height(24.dp))
+        FirstRunPairingScreenContent(
+            step = step,
+            devices = devices,
+            isScanning = isScanning,
+            trainerConnected = trainerConnected,
+            hrConnected = hrConnected,
+            ftp = ftp,
+            weightKg = weightKg,
+            maxHeartRate = maxHeartRate,
+            permissionDenied = permissionDenied,
+            onScan = { runWithBlePermissions { viewModel.startScan() } },
+            onStopScan = viewModel::stopScan,
+            onDeviceClick = { device -> runWithBlePermissions { viewModel.connectDevice(device) } },
+            onNextStep = viewModel::nextStep,
+            onFtpChange = viewModel::setFtp,
+            onWeightChange = viewModel::setWeightKg,
+            onMaxHrChange = viewModel::setMaxHeartRate,
+            onFinish = { viewModel.completeFirstRun(onPairingComplete) },
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
 
-            when (step) {
-                PairingStep.TRAINER -> PairingStepContent(
-                    title = "Pair your Smart Trainer",
-                    subtitle = "We'll use the trainer for power, cadence and ERG control. You can skip this if you don't have one yet.",
-                    connected = trainerConnected,
-                    deviceTypeFilter = DeviceType.SMART_TRAINER,
-                    devices = devices,
-                    isScanning = isScanning,
-                    permissionDenied = permissionDenied,
-                    onScan = { runWithBlePermissions { viewModel.startScan() } },
-                    onStopScan = { viewModel.stopScan() },
-                    onDeviceClick = { runWithBlePermissions { viewModel.connectDevice(it) } },
-                    onNext = { viewModel.nextStep() },
-                    allowSkip = true
-                )
+@Composable
+private fun FirstRunPairingScreenContent(
+    step: PairingStep,
+    devices: List<BleDevice>,
+    isScanning: Boolean,
+    trainerConnected: Boolean,
+    hrConnected: Boolean,
+    ftp: Int,
+    weightKg: Int,
+    maxHeartRate: Int,
+    permissionDenied: Boolean,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onDeviceClick: (BleDevice) -> Unit,
+    onNextStep: () -> Unit,
+    onFtpChange: (Int) -> Unit,
+    onWeightChange: (Int) -> Unit,
+    onMaxHrChange: (Int) -> Unit,
+    onFinish: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        StepIndicator(currentStep = step)
+        Spacer(Modifier.height(24.dp))
 
-                PairingStep.HEART_RATE -> PairingStepContent(
-                    title = "Pair your Heart Rate Monitor",
-                    subtitle = "Optional, but recommended for accurate training.",
-                    connected = hrConnected,
-                    deviceTypeFilter = DeviceType.HEART_RATE_MONITOR,
-                    devices = devices,
-                    isScanning = isScanning,
-                    permissionDenied = permissionDenied,
-                    onScan = { runWithBlePermissions { viewModel.startScan() } },
-                    onStopScan = { viewModel.stopScan() },
-                    onDeviceClick = { runWithBlePermissions { viewModel.connectDevice(it) } },
-                    onNext = { viewModel.nextStep() },
-                    allowSkip = true
-                )
+        when (step) {
+            PairingStep.TRAINER -> PairingStepContent(
+                title = "Pair your Smart Trainer",
+                subtitle = "We'll use the trainer for power, cadence and ERG control. You can skip this if you don't have one yet.",
+                connected = trainerConnected,
+                deviceTypeFilter = DeviceType.SMART_TRAINER,
+                devices = devices,
+                isScanning = isScanning,
+                permissionDenied = permissionDenied,
+                onScan = onScan,
+                onStopScan = onStopScan,
+                onDeviceClick = onDeviceClick,
+                onNext = onNextStep,
+                allowSkip = true
+            )
 
-                PairingStep.PROFILE -> ProfileStepContent(
-                    ftp = ftp,
-                    weightKg = weightKg,
-                    maxHeartRate = maxHeartRate,
-                    onFtpChange = { viewModel.setFtp(it) },
-                    onWeightChange = { viewModel.setWeightKg(it) },
-                    onMaxHrChange = { viewModel.setMaxHeartRate(it) },
-                    onNext = { viewModel.nextStep() }
-                )
+            PairingStep.HEART_RATE -> PairingStepContent(
+                title = "Pair your Heart Rate Monitor",
+                subtitle = "Optional, but recommended for accurate training.",
+                connected = hrConnected,
+                deviceTypeFilter = DeviceType.HEART_RATE_MONITOR,
+                devices = devices,
+                isScanning = isScanning,
+                permissionDenied = permissionDenied,
+                onScan = onScan,
+                onStopScan = onStopScan,
+                onDeviceClick = onDeviceClick,
+                onNext = onNextStep,
+                allowSkip = true
+            )
 
-                PairingStep.READY -> ReadyStepContent(
-                    onFinish = { viewModel.completeFirstRun(onPairingComplete) }
-                )
-            }
+            PairingStep.PROFILE -> ProfileStepContent(
+                ftp = ftp,
+                weightKg = weightKg,
+                maxHeartRate = maxHeartRate,
+                onFtpChange = onFtpChange,
+                onWeightChange = onWeightChange,
+                onMaxHrChange = onMaxHrChange,
+                onNext = onNextStep
+            )
+
+            PairingStep.READY -> ReadyStepContent(onFinish = onFinish)
         }
     }
 }

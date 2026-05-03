@@ -59,58 +59,75 @@ fun RideDetailScreen(
             )
         }
     ) { padding ->
-        val r = ride
-        if (r == null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                RideHeader(r)
+        RideDetailScreenContent(
+            ride = ride,
+            dataPoints = dataPoints,
+            uploadState = uploadState,
+            isStravaConnected = isStravaConnected,
+            onUpload = viewModel::uploadToStrava,
+            onClearError = viewModel::clearUploadError,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
 
-                StravaSyncSection(
-                    ride = r,
-                    uploadState = uploadState,
-                    isStravaConnected = isStravaConnected,
-                    onUpload = viewModel::uploadToStrava,
-                    onClearError = viewModel::clearUploadError
+@Composable
+private fun RideDetailScreenContent(
+    ride: Ride?,
+    dataPoints: List<CompactDataPoint>,
+    uploadState: HistoryStravaUploader.UploadState,
+    isStravaConnected: Boolean,
+    onUpload: () -> Unit,
+    onClearError: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (ride == null) {
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+    } else {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            RideHeader(ride)
+
+            StravaSyncSection(
+                ride = ride,
+                uploadState = uploadState,
+                isStravaConnected = isStravaConnected,
+                onUpload = onUpload,
+                onClearError = onClearError
+            )
+
+            if (dataPoints.isNotEmpty()) {
+                SectionTitle("Power")
+                PowerGraph(
+                    dataPoints = dataPoints,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
                 )
-
-                if (dataPoints.isNotEmpty()) {
-                    SectionTitle("Power")
-                    PowerGraph(
-                        dataPoints = dataPoints,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                    )
-                }
-
-                if (dataPoints.isNotEmpty() && dataPoints.any { it.hr > 0 }) {
-                    SectionTitle("Heart Rate")
-                    HeartRateGraph(
-                        dataPoints = dataPoints,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                    )
-                }
-
-                SectionTitle("Summary")
-                StatsGrid(r)
             }
+
+            if (dataPoints.isNotEmpty() && dataPoints.any { it.hr > 0 }) {
+                SectionTitle("Heart Rate")
+                HeartRateGraph(
+                    dataPoints = dataPoints,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                )
+            }
+
+            SectionTitle("Summary")
+            StatsGrid(ride)
         }
     }
 }

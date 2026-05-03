@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.WorkoutState
 import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.PowerDataPoint
@@ -66,113 +67,161 @@ fun WorkoutScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.5f)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(12.dp)
-            ) {
-                WorkoutProgressGraph(
-                    intervals = viewModel.workoutIntervals,
-                    currentTimeSeconds = progress.totalElapsedSeconds,
-                    totalDurationSeconds = progress.totalDurationSeconds,
-                    recordedPowerPoints = recordedData.map {
-                        PowerDataPoint(it.timeSeconds, it.actualPower)
-                    },
-                    workoutState = progress.workoutState,
-                    workoutName = progress.workoutName
-                )
-            }
-
-            HorizontalDivider(
-                color = zoneColor.copy(alpha = 0.3f),
-                thickness = 2.dp
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.5f)
-                    .background(zoneColor.copy(alpha = 0.05f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                ControlBar(
-                    workoutState = progress.workoutState,
-                    intervalName = progress.currentIntervalName,
-                    onStart = viewModel::startWorkout,
-                    onPause = viewModel::pauseWorkout,
-                    onResume = viewModel::resumeWorkout,
-                    onStopRequested = { showEndDialog = true },
-                    onBack = onNavigateBack,
-                    exportState = exportState,
-                    stravaConnected = stravaConnected,
-                    stravaUploadState = stravaUploadState,
-                    onUploadToStrava = viewModel::uploadExportedFitToStrava
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                StatsGrid(
-                    threeSecPower = metrics.power,
-                    targetPower = progress.targetPowerWatts,
-                    intervalRemaining = progress.intervalRemainingSeconds,
-                    cadence = metrics.cadence,
-                    heartRate = metrics.heartRate,
-                    zoneColor = zoneColor,
-                    displayAsPercent = displayAsPercent,
-                    currentFtp = currentFtp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                ErgToggleRow(
-                    ergEnabled = ergEnabled,
-                    ergRearming = ergRearming,
-                    onErgChange = viewModel::setErgEnabled,
-                    displayAsPercent = displayAsPercent,
-                    onDisplayChange = viewModel::setDisplayAsPercent
-                )
-            }
-        }
-
-        StartupOverlay(
-            state = startupState,
+        WorkoutScreenContent(
+            progress = progress,
+            metrics = metrics,
+            recordedData = recordedData,
+            ergEnabled = ergEnabled,
+            ergRearming = ergRearming,
+            displayAsPercent = displayAsPercent,
+            currentFtp = currentFtp,
+            startupState = startupState,
+            exportState = exportState,
+            stravaConnected = stravaConnected,
+            stravaUploadState = stravaUploadState,
+            workoutIntervals = viewModel.workoutIntervals,
+            showEndDialog = showEndDialog,
+            onShowEndDialog = { showEndDialog = it },
+            onStart = viewModel::startWorkout,
+            onPause = viewModel::pauseWorkout,
+            onResume = viewModel::resumeWorkout,
+            onStop = viewModel::stopWorkout,
+            onBack = onNavigateBack,
+            onUploadToStrava = viewModel::uploadExportedFitToStrava,
+            onErgChange = viewModel::setErgEnabled,
+            onDisplayChange = viewModel::setDisplayAsPercent,
             modifier = Modifier.padding(padding)
         )
+    }
+}
 
-        if (showEndDialog) {
-            AlertDialog(
-                onDismissRequest = { showEndDialog = false },
-                title = { Text("End workout?") },
-                text = {
-                    Text("Stopping now will end the session and save your progress. You can upload the workout to Strava after.")
+@Composable
+private fun WorkoutScreenContent(
+    progress: WorkoutProgress,
+    metrics: com.cycling.workitout.data.LiveMetrics,
+    recordedData: List<com.cycling.workitout.data.RecordedDataPoint>,
+    ergEnabled: Boolean,
+    ergRearming: Boolean,
+    displayAsPercent: Boolean,
+    currentFtp: Int,
+    startupState: WorkoutViewModel.StartupState,
+    exportState: WorkoutViewModel.ExportState,
+    stravaConnected: Boolean,
+    stravaUploadState: StravaRepository.UploadState,
+    workoutIntervals: List<WorkoutInterval>,
+    showEndDialog: Boolean,
+    onShowEndDialog: (Boolean) -> Unit,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onStop: () -> Unit,
+    onBack: () -> Unit,
+    onUploadToStrava: () -> Unit,
+    onErgChange: (Boolean) -> Unit,
+    onDisplayChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val zoneColor = Color(progress.currentZone.colorHex)
+
+    Column(modifier = modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(0.5f)
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(12.dp)
+        ) {
+            WorkoutProgressGraph(
+                intervals = workoutIntervals,
+                currentTimeSeconds = progress.totalElapsedSeconds,
+                totalDurationSeconds = progress.totalDurationSeconds,
+                recordedPowerPoints = recordedData.map {
+                    PowerDataPoint(it.timeSeconds, it.actualPower)
                 },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showEndDialog = false
-                            viewModel.stopWorkout()
-                        }
-                    ) {
-                        Text("End workout", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showEndDialog = false }) {
-                        Text("Keep going")
-                    }
-                }
+                workoutState = progress.workoutState,
+                workoutName = progress.workoutName
             )
         }
+
+        HorizontalDivider(
+            color = zoneColor.copy(alpha = 0.3f),
+            thickness = 2.dp
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(0.5f)
+                .background(zoneColor.copy(alpha = 0.05f))
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            ControlBar(
+                workoutState = progress.workoutState,
+                intervalName = progress.currentIntervalName,
+                onStart = onStart,
+                onPause = onPause,
+                onResume = onResume,
+                onStopRequested = { onShowEndDialog(true) },
+                onBack = onBack,
+                exportState = exportState,
+                stravaConnected = stravaConnected,
+                stravaUploadState = stravaUploadState,
+                onUploadToStrava = onUploadToStrava
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            StatsGrid(
+                threeSecPower = metrics.power,
+                targetPower = progress.targetPowerWatts,
+                intervalRemaining = progress.intervalRemainingSeconds,
+                cadence = metrics.cadence,
+                heartRate = metrics.heartRate,
+                zoneColor = zoneColor,
+                displayAsPercent = displayAsPercent,
+                currentFtp = currentFtp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            ErgToggleRow(
+                ergEnabled = ergEnabled,
+                ergRearming = ergRearming,
+                onErgChange = onErgChange,
+                displayAsPercent = displayAsPercent,
+                onDisplayChange = onDisplayChange
+            )
+        }
+    }
+
+    StartupOverlay(state = startupState)
+
+    if (showEndDialog) {
+        AlertDialog(
+            onDismissRequest = { onShowEndDialog(false) },
+            title = { Text("End workout?") },
+            text = {
+                Text("Stopping now will end the session and save your progress. You can upload the workout to Strava after.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onShowEndDialog(false)
+                        onStop()
+                    }
+                ) {
+                    Text("End workout", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { onShowEndDialog(false) }) {
+                    Text("Keep going")
+                }
+            }
+        )
     }
 }
 

@@ -60,106 +60,136 @@ fun LibraryScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 12.dp)
-        ) {
-            // ── Starter workouts ────────────────────────────────────────
-            if (defaultWorkouts.isNotEmpty()) {
-                item {
-                    SectionHeader("Starter workouts")
-                }
+        LibraryScreenContent(
+            savedWorkouts = savedWorkouts,
+            defaultWorkouts = defaultWorkouts,
+            selectedWorkout = selectedWorkout,
+            displayAsPercent = displayAsPercent,
+            currentFtp = currentFtp,
+            savedIds = savedIds,
+            deleteTarget = deleteTarget,
+            onSetDeleteTarget = { deleteTarget = it },
+            onSelectDefault = viewModel::selectDefaultWorkout,
+            onSaveDefault = viewModel::saveToLibrary,
+            onSelectSaved = viewModel::selectSavedWorkout,
+            onDeleteSaved = viewModel::deleteWorkout,
+            onToggleDisplay = viewModel::setDisplayAsPercent,
+            onDismissPreview = viewModel::dismissPreview,
+            onStartWorkout = onStartWorkout,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
 
-                // Group by duration — one subheader + 4 cards per group.
-                val byDuration = defaultWorkouts.groupBy { it.totalDurationSeconds / 60 }
-                    .toSortedMap()
+@Composable
+private fun LibraryScreenContent(
+    savedWorkouts: List<SavedWorkout>,
+    defaultWorkouts: List<WorkoutDefinition>,
+    selectedWorkout: WorkoutDefinition?,
+    displayAsPercent: Boolean,
+    currentFtp: Int,
+    savedIds: Set<String>,
+    deleteTarget: SavedWorkout?,
+    onSetDeleteTarget: (SavedWorkout?) -> Unit,
+    onSelectDefault: (WorkoutDefinition) -> Unit,
+    onSaveDefault: (WorkoutDefinition) -> Unit,
+    onSelectSaved: (SavedWorkout) -> Unit,
+    onDeleteSaved: (SavedWorkout) -> Unit,
+    onToggleDisplay: (Boolean) -> Unit,
+    onDismissPreview: () -> Unit,
+    onStartWorkout: (WorkoutDefinition) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 12.dp)
+    ) {
+        if (defaultWorkouts.isNotEmpty()) {
+            item { SectionHeader("Starter workouts") }
 
-                byDuration.forEach { (minutes, group) ->
-                    item {
-                        Text(
-                            "$minutes min",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
-                        )
-                    }
-                    items(group, key = { it.id }) { workout ->
-                        DefaultWorkoutCard(
-                            workout = workout,
-                            alreadySaved = workout.id in savedIds,
-                            onClick = { viewModel.selectDefaultWorkout(workout) },
-                            onSave = { viewModel.saveToLibrary(workout) }
-                        )
-                    }
-                }
-            }
+            val byDuration = defaultWorkouts.groupBy { it.totalDurationSeconds / 60 }
+                .toSortedMap()
 
-            // ── Your library ────────────────────────────────────────────
-            item {
-                Spacer(Modifier.height(12.dp))
-                SectionHeader("Your library")
-            }
-
-            if (savedWorkouts.isEmpty()) {
+            byDuration.forEach { (minutes, group) ->
                 item {
                     Text(
-                        "Tap the heart on a starter above, or generate a workout from Home and save it here.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "$minutes min",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
                     )
                 }
-            } else {
-                items(savedWorkouts, key = { it.id }) { entity ->
-                    SavedWorkoutCard(
-                        entity = entity,
-                        currentFtp = currentFtp,
-                        onClick = { viewModel.selectSavedWorkout(entity) },
-                        onDelete = { deleteTarget = entity }
+                items(group, key = { it.id }) { workout ->
+                    DefaultWorkoutCard(
+                        workout = workout,
+                        alreadySaved = workout.id in savedIds,
+                        onClick = { onSelectDefault(workout) },
+                        onSave = { onSaveDefault(workout) }
                     )
                 }
             }
         }
 
-        // Preview sheet for selected workout
-        if (selectedWorkout != null) {
-            LibraryPreviewSheet(
-                workout = selectedWorkout!!,
-                displayAsPercent = displayAsPercent,
-                onToggleDisplay = { viewModel.setDisplayAsPercent(it) },
-                onStart = {
-                    val w = selectedWorkout!!
-                    viewModel.dismissPreview()
-                    onStartWorkout(w)
-                },
-                onDismiss = { viewModel.dismissPreview() }
-            )
+        item {
+            Spacer(Modifier.height(12.dp))
+            SectionHeader("Your library")
         }
 
-        // Delete confirmation
-        if (deleteTarget != null) {
-            AlertDialog(
-                onDismissRequest = { deleteTarget = null },
-                title = { Text("Delete workout?") },
-                text = { Text("\"${deleteTarget!!.name}\" will be removed from your library.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        viewModel.deleteWorkout(deleteTarget!!)
-                        deleteTarget = null
-                    }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
-                }
-            )
+        if (savedWorkouts.isEmpty()) {
+            item {
+                Text(
+                    "Tap the heart on a starter above, or generate a workout from Home and save it here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+        } else {
+            items(savedWorkouts, key = { it.id }) { entity ->
+                SavedWorkoutCard(
+                    entity = entity,
+                    currentFtp = currentFtp,
+                    onClick = { onSelectSaved(entity) },
+                    onDelete = { onSetDeleteTarget(entity) }
+                )
+            }
         }
+    }
+
+    if (selectedWorkout != null) {
+        LibraryPreviewSheet(
+            workout = selectedWorkout,
+            displayAsPercent = displayAsPercent,
+            onToggleDisplay = onToggleDisplay,
+            onStart = {
+                onDismissPreview()
+                onStartWorkout(selectedWorkout)
+            },
+            onDismiss = onDismissPreview
+        )
+    }
+
+    if (deleteTarget != null) {
+        AlertDialog(
+            onDismissRequest = { onSetDeleteTarget(null) },
+            title = { Text("Delete workout?") },
+            text = { Text("\"${deleteTarget.name}\" will be removed from your library.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteSaved(deleteTarget)
+                    onSetDeleteTarget(null)
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { onSetDeleteTarget(null) }) { Text("Cancel") }
+            }
+        )
     }
 }
 

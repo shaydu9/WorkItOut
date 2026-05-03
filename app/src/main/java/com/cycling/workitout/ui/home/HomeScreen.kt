@@ -55,6 +55,7 @@ fun HomeScreen(
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
     val isDemoMode by viewModel.isDemoMode.collectAsStateWithLifecycle()
+    val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(state.error) {
@@ -83,108 +84,151 @@ fun HomeScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        HomeScreenContent(
+            state = state,
+            ftp = ftp,
+            trainerConnected = trainerConnected,
+            hrConnected = hrConnected,
+            isDemoMode = isDemoMode,
+            displayAsPercent = displayAsPercent,
+            onSetDuration = viewModel::setDuration,
+            onSetDifficulty = viewModel::setDifficulty,
+            onOpenCustomPrompt = viewModel::openCustomPrompt,
+            onCloseCustomPrompt = viewModel::closeCustomPrompt,
+            onSetCustomPromptText = viewModel::setCustomPromptText,
+            onGenerateCustomWorkout = viewModel::generateCustomWorkout,
+            onGenerateWorkout = viewModel::generateWorkout,
+            onSetDisplayAsPercent = viewModel::setDisplayAsPercent,
+            onSaveWorkoutToLibrary = viewModel::saveWorkoutToLibrary,
+            onDismissPreview = viewModel::dismissPreview,
+            onStartWorkout = onStartWorkout,
+            onRepairDevices = onRepairDevices,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
+
+@Composable
+private fun HomeScreenContent(
+    state: HomeUiState,
+    ftp: Int,
+    trainerConnected: Boolean,
+    hrConnected: Boolean,
+    isDemoMode: Boolean,
+    displayAsPercent: Boolean,
+    onSetDuration: (Int) -> Unit,
+    onSetDifficulty: (Difficulty) -> Unit,
+    onOpenCustomPrompt: () -> Unit,
+    onCloseCustomPrompt: () -> Unit,
+    onSetCustomPromptText: (String) -> Unit,
+    onGenerateCustomWorkout: () -> Unit,
+    onGenerateWorkout: () -> Unit,
+    onSetDisplayAsPercent: (Boolean) -> Unit,
+    onSaveWorkoutToLibrary: () -> Unit,
+    onDismissPreview: () -> Unit,
+    onStartWorkout: (WorkoutDefinition) -> Unit,
+    onRepairDevices: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ConnectionStatusChip(
+            trainerConnected = trainerConnected || isDemoMode,
+            hrConnected = hrConnected || isDemoMode,
+            onRepair = onRepairDevices
+        )
+
+        Text("FTP: ${ftp}W", style = MaterialTheme.typography.labelLarge)
+
+        Text("Duration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            ConnectionStatusChip(
-                trainerConnected = trainerConnected || isDemoMode,
-                hrConnected = hrConnected || isDemoMode,
-                onRepair = onRepairDevices
-            )
-
-            Text("FTP: ${ftp}W", style = MaterialTheme.typography.labelLarge)
-
-            Text("Duration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                DURATION_OPTIONS.forEach { mins ->
-                    FilterChip(
-                        selected = state.durationMinutes == mins,
-                        onClick = { viewModel.setDuration(mins) },
-                        label = { Text("${mins}m") }
-                    )
-                }
-            }
-
-            Text("Difficulty", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Difficulty.values().forEach { diff ->
-                    FilterChip(
-                        selected = state.difficulty == diff,
-                        onClick = { viewModel.setDifficulty(diff) },
-                        label = { Text(diff.label) }
-                    )
-                }
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            OutlinedButton(
-                onClick = { viewModel.openCustomPrompt() },
-                enabled = !state.isGenerating,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-            ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Describe your own workout", fontWeight = FontWeight.Medium)
-            }
-
-            Button(
-                onClick = { viewModel.generateWorkout() },
-                enabled = !state.isGenerating,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                if (state.isGenerating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text("Designing your workout…")
-                } else {
-                    Text("Generate Workout", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                }
+            DURATION_OPTIONS.forEach { mins ->
+                FilterChip(
+                    selected = state.durationMinutes == mins,
+                    onClick = { onSetDuration(mins) },
+                    label = { Text("${mins}m") }
+                )
             }
         }
 
-        if (state.customPromptOpen) {
-            CustomPromptDialog(
-                text = state.customPromptText,
-                onTextChange = { viewModel.setCustomPromptText(it) },
-                onDismiss = { viewModel.closeCustomPrompt() },
-                onSubmit = { viewModel.generateCustomWorkout() }
-            )
+        Text("Difficulty", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Difficulty.values().forEach { diff ->
+                FilterChip(
+                    selected = state.difficulty == diff,
+                    onClick = { onSetDifficulty(diff) },
+                    label = { Text(diff.label) }
+                )
+            }
         }
 
-        if (state.preview != null) {
-            val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
-            WorkoutPreviewSheet(
-                workout = state.preview!!,
-                displayAsPercent = displayAsPercent,
-                onToggleDisplay = { viewModel.setDisplayAsPercent(it) },
-                onStart = {
-                    val w = state.preview!!
-                    viewModel.dismissPreview()
-                    onStartWorkout(w)
-                },
-                onDismiss = { viewModel.dismissPreview() },
-                onSave = { viewModel.saveWorkoutToLibrary() }
-            )
+        Spacer(Modifier.weight(1f))
+
+        OutlinedButton(
+            onClick = onOpenCustomPrompt,
+            enabled = !state.isGenerating,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Icon(Icons.Default.AutoAwesome, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Describe your own workout", fontWeight = FontWeight.Medium)
         }
+
+        Button(
+            onClick = onGenerateWorkout,
+            enabled = !state.isGenerating,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+        ) {
+            if (state.isGenerating) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                Spacer(Modifier.width(12.dp))
+                Text("Designing your workout…")
+            } else {
+                Text("Generate Workout", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+
+    if (state.customPromptOpen) {
+        CustomPromptDialog(
+            text = state.customPromptText,
+            onTextChange = onSetCustomPromptText,
+            onDismiss = onCloseCustomPrompt,
+            onSubmit = onGenerateCustomWorkout
+        )
+    }
+
+    if (state.preview != null) {
+        WorkoutPreviewSheet(
+            workout = state.preview,
+            displayAsPercent = displayAsPercent,
+            onToggleDisplay = onSetDisplayAsPercent,
+            onStart = {
+                val w = state.preview
+                onDismissPreview()
+                onStartWorkout(w)
+            },
+            onDismiss = onDismissPreview,
+            onSave = onSaveWorkoutToLibrary
+        )
     }
 }
 
