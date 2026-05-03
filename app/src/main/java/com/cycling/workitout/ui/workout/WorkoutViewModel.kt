@@ -37,6 +37,7 @@ import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.io.File
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class WorkoutViewModel(
@@ -329,9 +330,23 @@ class WorkoutViewModel(
                 val np = computeNormalizedPower(powers)
                 val durationSec = records.lastOrNull()?.timeSeconds ?: 0
 
-                val compactPoints = records.map {
-                    CompactDataPoint(it.timeSeconds, it.actualPower, it.targetPower, it.heartRate, it.cadence)
-                }
+                // Collapse to 1 Hz: the recorder emits several rows per second (sensors
+                // arrive at different rates), but the detail chart's X-axis is whole seconds,
+                // so duplicate-second rows would just inflate the Firestore payload past its
+                // 1 MB per-field cap. Averaging within each second is lossless for the chart.
+                val compactPoints = records
+                    .groupBy { it.timeSeconds }
+                    .entries
+                    .sortedBy { it.key }
+                    .map { (second, group) ->
+                        CompactDataPoint(
+                            t = second,
+                            p = group.map { it.actualPower }.average().roundToInt(),
+                            tp = group.last().targetPower,
+                            hr = group.map { it.heartRate }.average().roundToInt(),
+                            c = group.map { it.cadence }.average().roundToInt(),
+                        )
+                    }
                 val json = Json.encodeToString(compactPoints)
 
                 val entity = Ride(
