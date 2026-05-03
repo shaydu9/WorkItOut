@@ -96,7 +96,8 @@ class WorkoutViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** User's current FTP — used to compute live power as a %-FTP on the active-workout UI. */
-    val currentFtp: StateFlow<Int> = themePreferences.userFtpWatts
+    val currentFtp: StateFlow<Int> = WorkItOutApplication.userProfileRepository.profile
+        .map { it.ftpWatts }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
 
     fun setDisplayAsPercent(asPercent: Boolean) {
@@ -327,7 +328,7 @@ class WorkoutViewModel(
 
         viewModelScope.launch {
             try {
-                val ftp = WorkItOutApplication.themePreferences.userFtpWatts.first()
+                val ftp = WorkItOutApplication.userProfileRepository.profile.value.ftpWatts
                 val powers = records.map { it.actualPower }
                 val avgPower = powers.average().toInt()
                 val maxPower = powers.max()

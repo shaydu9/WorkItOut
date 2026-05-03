@@ -13,6 +13,9 @@ import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.logging.CrashlyticsTree
 import com.cycling.workitout.logging.PrettyTimberTree
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import timber.log.Timber
 
 class WorkItOutApplication : Application() {
@@ -69,7 +72,10 @@ class WorkItOutApplication : Application() {
             themePreferences = themePreferences
         )
         workoutRepository = WorkoutRepository()
-        userProfileRepository = UserProfileRepository(themePreferences = themePreferences)
+        userProfileRepository = UserProfileRepository(
+            themePreferences = themePreferences,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        )
 
         Timber.tag("APP").i("Auth ready: currentUser=${authRepository.currentUser.value}")
     }

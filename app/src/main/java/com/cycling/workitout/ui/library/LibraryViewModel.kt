@@ -30,8 +30,9 @@ class LibraryViewModel(
 
     val savedWorkouts: Flow<List<SavedWorkout>> = workoutRepository.getSavedWorkouts()
 
-    /** Canonical FTP, streamed from prefs. */
-    val ftp: StateFlow<Int> = preferences.userFtpWatts
+    /** Canonical FTP, streamed from profile. */
+    val ftp: StateFlow<Int> = WorkItOutApplication.userProfileRepository.profile
+        .map { it.ftpWatts }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
 
     /** Whether targets render as percent of FTP (vs. raw watts). */
@@ -39,9 +40,10 @@ class LibraryViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** 5×4 grid of starter workouts, re-derived when FTP changes. */
-    val defaultWorkouts: StateFlow<List<WorkoutDefinition>> = preferences.userFtpWatts
-        .map { ftpWatts -> LocalWorkoutGenerator.getDefaultLibrary(ftpWatts) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val defaultWorkouts: StateFlow<List<WorkoutDefinition>> =
+        WorkItOutApplication.userProfileRepository.profile
+            .map { LocalWorkoutGenerator.getDefaultLibrary(it.ftpWatts) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _selectedWorkout = MutableStateFlow<WorkoutDefinition?>(null)
     val selectedWorkout: StateFlow<WorkoutDefinition?> = _selectedWorkout.asStateFlow()
