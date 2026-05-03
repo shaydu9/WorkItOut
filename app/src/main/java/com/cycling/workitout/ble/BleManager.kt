@@ -80,9 +80,6 @@ class BleManager(private val context: Context) {
 
     private val powerSmoother = PowerSmoother(smoothingWindowSeconds = 3)
 
-    private val mockDataScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val mockDataGenerator = MockDataGenerator(mockDataScope)
-
     // BLE allows only one in-flight write at a time — all control writes go through this queue.
     // Conflated: if the consumer is mid-write and another frame is queued, only the LATEST is kept.
     // This stops resends from piling up if the trainer's BLE radio briefly stalls.
@@ -201,10 +198,7 @@ class BleManager(private val context: Context) {
             }
         }
     }
-    
-    private val _isDemoMode = MutableStateFlow(false)
-    val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
-    
+
     fun isBluetoothEnabled(): Boolean {
         return bluetoothAdapter?.isEnabled == true
     }
@@ -501,12 +495,6 @@ class BleManager(private val context: Context) {
         }
     }
 
-    fun setDemoTargetPower(watts: Int) {
-        if (_isDemoMode.value) {
-            mockDataGenerator.setTargetPower(watts)
-        }
-    }
-
     private fun enqueueControlWrite(data: ByteArray) {
         when (_controlMode.value) {
             ControlMode.FTMS -> if (ftmsControlPointChar == null || trainerGatt == null) {
@@ -605,69 +593,6 @@ class BleManager(private val context: Context) {
     
     fun getPowerSmoothingWindow(): Int {
         return powerSmoother.getSmoothingWindow()
-    }
-    
-    fun enableDemoMode() {
-        if (_isDemoMode.value) return
-        Timber.tag("BLE").d( "Enabling demo mode")
-        _isDemoMode.value = true
-        _isHeartRateConnected.value = true
-        _isPowerMeterConnected.value = true
-        _isTrainerConnected.value = true
-        _trainerControlAvailable.value = true
-        mockDataGenerator.start()
-        mockDataScope.launch {
-            mockDataGenerator.heartRateData.collect { mockHr ->
-                if (_isDemoMode.value) _heartRateData.value = mockHr
-            }
-        }
-        mockDataScope.launch {
-            mockDataGenerator.powerData.collect { mockPower ->
-                if (_isDemoMode.value) {
-                    val smoothedPower = powerSmoother.addReading(mockPower.power)
-                    _powerData.value = PowerData(smoothedPower, mockPower.cadence)
-                }
-            }
-        }
-    }
-
-    fun disableDemoMode() {
-        if (!_isDemoMode.value) return
-        Timber.tag("BLE").d( "Disabling demo mode")
-        _isDemoMode.value = false
-        mockDataGenerator.stop()
-        _isHeartRateConnected.value = false
-        _isPowerMeterConnected.value = false
-        _isTrainerConnected.value = false
-        _trainerControlAvailable.value = false
-        mockDataGenerator.clearTargetPower()
-        _heartRateData.value = HeartRateData(0)
-        _powerData.value = PowerData(0, 0)
-        powerSmoother.clear()
-    }
-    
-    fun getDemoPhaseDescription(): String {
-        return if (_isDemoMode.value) {
-            mockDataGenerator.getCurrentPhaseDescription()
-        } else {
-            ""
-        }
-    }
-    
-    fun getDemoElapsedTime(): String {
-        return if (_isDemoMode.value) {
-            mockDataGenerator.getElapsedTimeFormatted()
-        } else {
-            "00:00"
-        }
-    }
-    
-    fun getDemoElapsedSeconds(): Int {
-        return if (_isDemoMode.value) {
-            mockDataGenerator.getElapsedSeconds()
-        } else {
-            0
-        }
     }
     
     private val heartRateGattCallback = object : BluetoothGattCallback() {

@@ -54,7 +54,6 @@ fun HomeScreen(
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
-    val isDemoMode by viewModel.isDemoMode.collectAsStateWithLifecycle()
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -89,7 +88,6 @@ fun HomeScreen(
             ftp = ftp,
             trainerConnected = trainerConnected,
             hrConnected = hrConnected,
-            isDemoMode = isDemoMode,
             displayAsPercent = displayAsPercent,
             onSetDuration = viewModel::setDuration,
             onSetDifficulty = viewModel::setDifficulty,
@@ -114,7 +112,6 @@ private fun HomeScreenContent(
     ftp: Int,
     trainerConnected: Boolean,
     hrConnected: Boolean,
-    isDemoMode: Boolean,
     displayAsPercent: Boolean,
     onSetDuration: (Int) -> Unit,
     onSetDifficulty: (Difficulty) -> Unit,
@@ -137,8 +134,8 @@ private fun HomeScreenContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         ConnectionStatusChip(
-            trainerConnected = trainerConnected || isDemoMode,
-            hrConnected = hrConnected || isDemoMode,
+            trainerConnected = trainerConnected,
+            hrConnected = hrConnected,
             onRepair = onRepairDevices
         )
 

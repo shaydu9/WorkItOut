@@ -89,8 +89,6 @@ class WorkoutViewModel(
     // UI-mapped intervals for the workout graph
     val workoutIntervals: List<WorkoutInterval>
 
-    val isDemoMode: StateFlow<Boolean> = bleManager.isDemoMode
-
     // ── Display preference (W vs. % FTP) ──────────────────────────────
     val displayAsPercent: StateFlow<Boolean> = themePreferences.displayTargetsAsPercent
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -171,23 +169,21 @@ class WorkoutViewModel(
         // Wire engine callbacks to BLE — gated by ERG toggle.
         workoutEngine.onTargetPowerChanged = { watts ->
             lastIntervalTransitionMs = System.currentTimeMillis()
-            if (bleManager.isDemoMode.value) {
-                bleManager.setDemoTargetPower(watts)
-            } else if (_ergEnabled.value) {
+            if (_ergEnabled.value) {
                 bleManager.setTargetPower(ergToken, watts)
             }
         }
 
         workoutEngine.onWorkoutStarted = {
             bleManager.setWorkoutActive(true)
-            if (!bleManager.isDemoMode.value && _ergEnabled.value) {
+            if (_ergEnabled.value) {
                 bleManager.requestFtmsControl(ergToken)
                 bleManager.startFtmsWorkout(ergToken)
             }
         }
 
         workoutEngine.onWorkoutStopped = {
-            if (!bleManager.isDemoMode.value && _ergEnabled.value) {
+            if (_ergEnabled.value) {
                 bleManager.stopFtmsWorkout(ergToken)
             }
             bleManager.setWorkoutActive(false)
@@ -206,7 +202,7 @@ class WorkoutViewModel(
 
         // Pre-send the first target on screen entry so the trainer is already locked by the time the user hits Start.
         viewModelScope.launch {
-            if (!bleManager.isDemoMode.value && _ergEnabled.value) {
+            if (_ergEnabled.value) {
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
                     bleManager.requestFtmsControl(ergToken)
@@ -217,12 +213,10 @@ class WorkoutViewModel(
         }
 
         // Auto-arm on entry so the "Start pedaling" prompt is the first thing the rider sees.
-        if (!bleManager.isDemoMode.value) {
-            viewModelScope.launch {
-                runStartupCountdown()
-                _startupState.value = StartupState.Idle
-                workoutEngine.start()
-            }
+        viewModelScope.launch {
+            runStartupCountdown()
+            _startupState.value = StartupState.Idle
+            workoutEngine.start()
         }
 
         // ERG watchdog — runs for the lifetime of the VM, only acts while a workout is RUNNING
@@ -232,10 +226,6 @@ class WorkoutViewModel(
 
     fun startWorkout() {
         if (_startupState.value != StartupState.Idle) return
-        if (bleManager.isDemoMode.value) {
-            workoutEngine.start()
-            return
-        }
         viewModelScope.launch {
             // Reopen the burst window so the trainer gets fresh frames during the countdown.
             if (_ergEnabled.value) {
@@ -404,7 +394,6 @@ class WorkoutViewModel(
         while (true) {
             delay(1_000L)
 
-            if (bleManager.isDemoMode.value) { consecutiveDeviationSec = 0; continue }
             if (!_ergEnabled.value) { consecutiveDeviationSec = 0; continue }
             if (workoutEngine.progress.value.workoutState != WorkoutState.RUNNING) {
                 consecutiveDeviationSec = 0; continue
@@ -490,7 +479,6 @@ class WorkoutViewModel(
     fun setErgEnabled(enabled: Boolean) {
         if (_ergEnabled.value == enabled) return
         _ergEnabled.value = enabled
-        if (bleManager.isDemoMode.value) return
         viewModelScope.launch {
             if (enabled) {
                 bleManager.requestFtmsControl(ergToken)

@@ -60,8 +60,6 @@ class HomeViewModel(
     val isHeartRateConnected: StateFlow<Boolean> = bleManager.isHeartRateConnected
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    val isDemoMode: StateFlow<Boolean> = bleManager.isDemoMode
-
     val displayAsPercent: StateFlow<Boolean> = preferences.displayTargetsAsPercent
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
