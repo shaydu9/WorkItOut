@@ -61,7 +61,7 @@ class RideDetailViewModel(private val rideId: String) : ViewModel() {
     }
 
     fun uploadToStrava() {
-        viewModelScope.launch { historyUploader.upload(rideId) }
+        historyUploader.upload(rideId)
     }
 
     fun clearUploadError() = historyUploader.clearError(rideId)
