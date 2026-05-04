@@ -807,12 +807,23 @@ class BleManager(private val context: Context) {
             Timber.tag("BLE").d("Trainer descriptor write: char=${descriptor.characteristic.uuid}, status=$status")
 
             if (descriptor.characteristic.uuid == BleConstants.INDOOR_BIKE_DATA_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
-                ftmsControlPointChar?.let { cpChar ->
+                if (ftmsControlPointChar != null) {
+                    val cpChar = ftmsControlPointChar!!
                     val cpDescriptor = cpChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
                     cpDescriptor?.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
                     val written = gatt.writeDescriptor(cpDescriptor)
                     Timber.tag("ERG").d("Writing FTMS Control Point indication descriptor: $written")
+                } else {
+                    // No Control Point — go straight to CPS cadence fallback for FTMS trainers
+                    // that omit cadence from Indoor Bike Data (e.g. Wahoo KICKR).
+                    subscribeToCpsForCadence(gatt)
                 }
+            }
+
+            if (descriptor.characteristic.uuid == BleConstants.FTMS_CONTROL_POINT_CHAR_UUID && status == BluetoothGatt.GATT_SUCCESS) {
+                // After FTMS control point is set up, subscribe to CPS if available — some FTMS
+                // trainers (e.g. Wahoo KICKR) don't include cadence in Indoor Bike Data.
+                subscribeToCpsForCadence(gatt)
             }
 
             // BLE allows one descriptor write at a time — chain CSC after CPS completes.
@@ -848,12 +859,21 @@ class BleManager(private val context: Context) {
                     }
                 }
                 BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID -> {
-                    // Fallback: trainer without FTMS, reading power from CPS
                     val (power, cadence) = parsePowerMeasurement(characteristic)
-                    val smoothedPower = powerSmoother.addReading(power)
-                    val effectiveCadence = if (cadence > 0) cadence else lastKnownCadence
-                    _powerData.value = PowerData(smoothedPower, effectiveCadence)
-                    sampleLog { "Trainer CPS fallback - Power: $power W (smoothed: $smoothedPower), Cadence: $effectiveCadence rpm (raw CPS: $cadence)" }
+                    if (_controlMode.value == ControlMode.FTMS) {
+                        // FTMS trainer (e.g. Wahoo KICKR) that omits cadence from Indoor Bike Data —
+                        // use CPS cadence only; power already comes from Indoor Bike Data.
+                        if (cadence > 0) {
+                            val currentPower = _powerData.value.power
+                            _powerData.value = PowerData(currentPower, cadence)
+                            sampleLog { "FTMS+CPS cadence supplement: $cadence rpm" }
+                        }
+                    } else {
+                        // Non-FTMS trainer: CPS is the primary power+cadence source.
+                        val effectiveCadence = if (cadence > 0) cadence else lastKnownCadence
+                        _powerData.value = PowerData(power, effectiveCadence)
+                        sampleLog { "Trainer CPS fallback - Power: $power W, Cadence: $effectiveCadence rpm (raw CPS: $cadence)" }
+                    }
                 }
                 BleConstants.CSC_MEASUREMENT_CHAR_UUID -> {
                     val cadence = parseCscMeasurement(characteristic)
@@ -999,6 +1019,19 @@ class BleManager(private val context: Context) {
         return Pair(smoothedPower, cadence)
     }
     
+    // Subscribes to CPS for cadence supplementation on FTMS trainers that omit cadence from
+    // Indoor Bike Data (e.g. Wahoo KICKR). No-op if CPS service is not present.
+    @SuppressLint("MissingPermission")
+    private fun subscribeToCpsForCadence(gatt: BluetoothGatt) {
+        val cpsService = gatt.getService(BleConstants.CYCLING_POWER_SERVICE_UUID) ?: return
+        val cpsChar = cpsService.getCharacteristic(BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID) ?: return
+        gatt.setCharacteristicNotification(cpsChar, true)
+        val descriptor = cpsChar.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+        descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        val written = gatt.writeDescriptor(descriptor)
+        Timber.tag("BLE").i("FTMS+CPS cadence fallback: subscribed to CPS for cadence, written=$written")
+    }
+
     @SuppressLint("MissingPermission")
     private fun subscribeToCSC(gatt: BluetoothGatt) {
         val cscService = gatt.getService(BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID)
