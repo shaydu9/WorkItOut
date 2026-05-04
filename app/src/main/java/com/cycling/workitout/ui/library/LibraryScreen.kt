@@ -1,6 +1,8 @@
 package com.cycling.workitout.ui.library
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -372,6 +374,7 @@ private fun LibraryPreviewSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -406,13 +409,11 @@ private fun LibraryPreviewSheet(
 
             HorizontalDivider()
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 360.dp),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(workout.intervals) { interval ->
+                workout.intervals.forEach { interval ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
