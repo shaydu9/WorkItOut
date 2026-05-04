@@ -45,6 +45,7 @@ class BleManager(private val context: Context) {
     private var heartRateGatt: BluetoothGatt? = null
     private var powerMeterGatt: BluetoothGatt? = null
     private var trainerGatt: BluetoothGatt? = null
+    private var trainerMacAddress: String? = null  // retained for GATT_ERROR retry
     private var ftmsControlPointChar: BluetoothGattCharacteristic? = null
     // Used when the trainer speaks Tacx FE-C over BLE instead of FTMS.
     private var fecWriteChar: BluetoothGattCharacteristic? = null
@@ -374,6 +375,7 @@ class BleManager(private val context: Context) {
             return
         }
 
+        trainerMacAddress = bleDevice.device.address
         trainerGatt?.close()
         trainerGatt = bleDevice.device.connectGatt(context, false, trainerGattCallback)
         Timber.tag("BLE").d("Connecting to smart trainer: ${bleDevice.name}")
@@ -384,6 +386,7 @@ class BleManager(private val context: Context) {
         try {
             val device = bluetoothAdapter?.getRemoteDevice(macAddress)
             if (device != null) {
+                trainerMacAddress = macAddress
                 trainerGatt?.close()
                 trainerGatt = device.connectGatt(context, false, trainerGattCallback)
                 Timber.tag("BLE").d("Reconnecting to smart trainer: $macAddress")
@@ -716,6 +719,21 @@ class BleManager(private val context: Context) {
                     _controlMode.value = ControlMode.NONE
                     // currentFecTargetWatts intentionally retained: if reconnect happens during a
                     // workout, the VM's onTargetPowerChanged hook re-pushes the right value.
+
+                    // status=133 (GATT_ERROR) typically means the BLE stack has a stale handle
+                    // from a previous process session. Close the old handle, wait for the stack
+                    // to release it, then retry once with a fresh connectGatt call.
+                    if (status == 133) {
+                        val mac = trainerMacAddress
+                        if (mac != null) {
+                            bleScope.launch {
+                                Timber.tag("BLE").i("Trainer GATT_ERROR — retrying in 1s (mac=$mac)")
+                                gatt.close()
+                                kotlinx.coroutines.delay(1_000L)
+                                reconnectTrainer(mac)
+                            }
+                        }
+                    }
                 }
             }
         }
