@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -93,6 +94,8 @@ fun HomeScreen(
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
+    val cadenceSensorConnected by viewModel.isCadenceSensorConnected.collectAsStateWithLifecycle()
+    val trainerProvidesCadence by viewModel.trainerProvidesCadence.collectAsStateWithLifecycle()
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
     // Dialog State
     var pairingDialogDeviceType by remember { mutableStateOf<DeviceType?>(null) }
@@ -104,6 +107,7 @@ fun HomeScreen(
     }
 
     val onTrainerTap = { withBlePermission { pairingDialogDeviceType = DeviceType.SMART_TRAINER } }
+    val onCadenceTap = { withBlePermission { pairingDialogDeviceType = DeviceType.CADENCE_SENSOR } }
     val onHrTap = { withBlePermission { pairingDialogDeviceType = DeviceType.HEART_RATE_MONITOR } }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -140,6 +144,7 @@ fun HomeScreen(
             state = state,
             ftp = ftp,
             trainerConnected = trainerConnected,
+            cadenceConnected = cadenceSensorConnected || trainerProvidesCadence,
             hrConnected = hrConnected,
             displayAsPercent = displayAsPercent,
             onSetDuration = viewModel::setDuration,
@@ -154,6 +159,7 @@ fun HomeScreen(
             onDismissPreview = viewModel::dismissPreview,
             onStartWorkout = onStartWorkout,
             onTrainerTap = onTrainerTap,
+            onCadenceTap = onCadenceTap,
             onHrTap = onHrTap,
             modifier = Modifier.padding(padding)
         )
@@ -183,6 +189,7 @@ private fun HomeScreenContent(
     state: HomeUiState,
     ftp: Int,
     trainerConnected: Boolean,
+    cadenceConnected: Boolean,
     hrConnected: Boolean,
     displayAsPercent: Boolean,
     onSetDuration: (Int) -> Unit,
@@ -197,6 +204,7 @@ private fun HomeScreenContent(
     onDismissPreview: () -> Unit,
     onStartWorkout: (WorkoutDefinition) -> Unit,
     onTrainerTap: () -> Unit,
+    onCadenceTap: () -> Unit,
     onHrTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -215,8 +223,10 @@ private fun HomeScreenContent(
     ) {
         ConnectionStatusChip(
             trainerConnected = trainerConnected,
+            cadenceConnected = cadenceConnected,
             hrConnected = hrConnected,
             onTrainerTap = onTrainerTap,
+            onCadenceTap = onCadenceTap,
             onHrTap = onHrTap
         )
 
@@ -536,8 +546,10 @@ private fun IntervalRow(interval: WorkoutIntervalDef, displayAsPercent: Boolean 
 @Composable
 private fun ConnectionStatusChip(
     trainerConnected: Boolean,
+    cadenceConnected: Boolean,
     hrConnected: Boolean,
     onTrainerTap: () -> Unit,
+    onCadenceTap: () -> Unit,
     onHrTap: () -> Unit
 ) {
     Row(
@@ -547,16 +559,21 @@ private fun ConnectionStatusChip(
         DeviceStatusPill(
             connected = trainerConnected,
             icon = Icons.Default.FitnessCenter,
-            connectedLabel = "Trainer",
-            disconnectedLabel = "Trainer",
+            label = "Trainer",
             onClick = onTrainerTap,
+            modifier = Modifier.weight(1f)
+        )
+        DeviceStatusPill(
+            connected = cadenceConnected,
+            icon = Icons.Default.Cached,
+            label = "Cadence",
+            onClick = onCadenceTap,
             modifier = Modifier.weight(1f)
         )
         DeviceStatusPill(
             connected = hrConnected,
             icon = if (hrConnected) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            connectedLabel = "HR",
-            disconnectedLabel = "HR",
+            label = "HR",
             onClick = onHrTap,
             modifier = Modifier.weight(1f)
         )
@@ -567,8 +584,7 @@ private fun ConnectionStatusChip(
 private fun DeviceStatusPill(
     connected: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    connectedLabel: String,
-    disconnectedLabel: String,
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -576,24 +592,30 @@ private fun DeviceStatusPill(
         if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
     val fg =
         if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-    val label = if (connected) "$connectedLabel connected" else "$disconnectedLabel — tap"
     Surface(
-        shape = RoundedCornerShape(50),
+        shape = RoundedCornerShape(16.dp),
         color = bg,
         onClick = onClick,
         modifier = modifier
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Icon(icon, contentDescription = null, tint = fg)
-            Spacer(Modifier.width(8.dp))
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
                 label,
                 color = fg,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
             )
         }
     }

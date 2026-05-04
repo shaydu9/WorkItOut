@@ -29,6 +29,7 @@ fun DevicePairingDialog(
     val title = when (deviceType) {
         DeviceType.HEART_RATE_MONITOR -> "Connect Heart Rate Monitor"
         DeviceType.SMART_TRAINER -> "Connect Smart Trainer"
+        DeviceType.CADENCE_SENSOR -> "Connect Cadence Sensor"
         else -> "Connect Device"
     }
 

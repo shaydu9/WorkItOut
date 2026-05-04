@@ -14,5 +14,6 @@ enum class DeviceType {
     HEART_RATE_MONITOR,
     POWER_METER,
     SMART_TRAINER,
+    CADENCE_SENSOR,
     UNKNOWN
 }

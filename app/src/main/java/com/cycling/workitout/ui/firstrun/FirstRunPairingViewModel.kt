@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 
 enum class PairingStep {
     TRAINER,
+    CADENCE,
     HEART_RATE,
     PROFILE,
     READY
@@ -56,6 +57,12 @@ class FirstRunPairingViewModel(
     val isHeartRateConnected: StateFlow<Boolean> = bleManager.isHeartRateConnected
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val isCadenceSensorConnected: StateFlow<Boolean> = bleManager.isCadenceSensorConnected
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val trainerProvidesCadence: StateFlow<Boolean> = bleManager.trainerProvidesCadence
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     fun startScan() {
         viewModelScope.launch { bleManager.startScan() }
     }
@@ -70,6 +77,7 @@ class FirstRunPairingViewModel(
                 DeviceType.SMART_TRAINER -> bleManager.connectTrainer(device)
                 DeviceType.HEART_RATE_MONITOR -> bleManager.connectHeartRateMonitor(device)
                 DeviceType.POWER_METER -> bleManager.connectPowerMeter(device)
+                DeviceType.CADENCE_SENSOR -> bleManager.connectCadenceSensor(device)
                 else -> Unit
             }
             deviceRepository.saveDevice(device)
@@ -79,7 +87,16 @@ class FirstRunPairingViewModel(
     fun nextStep() {
         viewModelScope.launch {
             _step.value = when (_step.value) {
-                PairingStep.TRAINER -> PairingStep.HEART_RATE
+                // Skip the Cadence step when the trainer already broadcasts cadence — most modern
+                // smart trainers do, so most users won't ever see this step.
+                PairingStep.TRAINER -> {
+                    // Read from BleManager directly — the VM's stateIn(WhileSubscribed) wrapper
+                    // doesn't reflect upstream until a UI collector subscribes, which never happens
+                    // for this flag.
+                    if (bleManager.trainerProvidesCadence.value) PairingStep.HEART_RATE
+                    else PairingStep.CADENCE
+                }
+                PairingStep.CADENCE -> PairingStep.HEART_RATE
                 PairingStep.HEART_RATE -> {
                     if (userProfileRepository.hasExistingProfile()) PairingStep.READY
                     else { wentThroughProfileStep = true; PairingStep.PROFILE }

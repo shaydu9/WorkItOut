@@ -45,6 +45,7 @@ class BleManager(private val context: Context) {
     private var heartRateGatt: BluetoothGatt? = null
     private var powerMeterGatt: BluetoothGatt? = null
     private var trainerGatt: BluetoothGatt? = null
+    private var cadenceSensorGatt: BluetoothGatt? = null
     private var trainerMacAddress: String? = null  // retained for GATT_ERROR retry
     private var ftmsControlPointChar: BluetoothGattCharacteristic? = null
     // Used when the trainer speaks Tacx FE-C over BLE instead of FTMS.
@@ -66,6 +67,19 @@ class BleManager(private val context: Context) {
 
     private val _isTrainerConnected = MutableStateFlow(false)
     val isTrainerConnected: StateFlow<Boolean> = _isTrainerConnected.asStateFlow()
+
+    private val _isCadenceSensorConnected = MutableStateFlow(false)
+    val isCadenceSensorConnected: StateFlow<Boolean> = _isCadenceSensorConnected.asStateFlow()
+
+    // True once we've parsed a trainer measurement frame whose cadence field is present.
+    // Used by FirstRunPairing to skip the cadence step when the trainer broadcasts cadence.
+    // Reset on trainer disconnect.
+    private val _trainerProvidesCadence = MutableStateFlow(false)
+    val trainerProvidesCadence: StateFlow<Boolean> = _trainerProvidesCadence.asStateFlow()
+
+    // Most recent cadence (RPM) from the dedicated external CSC sensor.
+    // Wins over trainer cadence whenever isCadenceSensorConnected is true.
+    @Volatile private var externalCadenceRpm: Int = 0
 
     private val _trainerControlAvailable = MutableStateFlow(false)
     val trainerControlAvailable: StateFlow<Boolean> = _trainerControlAvailable.asStateFlow()
@@ -227,6 +241,9 @@ class BleManager(private val context: Context) {
                 .build(),
             ScanFilter.Builder()
                 .setServiceUuid(ParcelUuid(BleConstants.FITNESS_MACHINE_SERVICE_UUID))
+                .build(),
+            ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID))
                 .build()
         )
         
@@ -263,6 +280,7 @@ class BleManager(private val context: Context) {
             val hasFtms = BleConstants.FITNESS_MACHINE_SERVICE_UUID in serviceUuids
             val hasCps = BleConstants.CYCLING_POWER_SERVICE_UUID in serviceUuids
             val hasHr = BleConstants.HEART_RATE_SERVICE_UUID in serviceUuids
+            val hasCsc = BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID in serviceUuids
 
             val looksLikeTrainer = KNOWN_TRAINER_KEYWORDS.any { it in nameLower }
 
@@ -271,6 +289,8 @@ class BleManager(private val context: Context) {
                 hasCps && looksLikeTrainer -> DeviceType.SMART_TRAINER
                 hasHr -> DeviceType.HEART_RATE_MONITOR
                 hasCps -> DeviceType.POWER_METER
+                // CSC-only (no CPS, no FTMS, no HR) → dedicated cadence/speed sensor
+                hasCsc -> DeviceType.CADENCE_SENSOR
                 else -> DeviceType.UNKNOWN
             }
             
@@ -369,6 +389,46 @@ class BleManager(private val context: Context) {
     }
     
     @SuppressLint("MissingPermission")
+    fun connectCadenceSensor(bleDevice: BleDevice) {
+        if (bleDevice.deviceType != DeviceType.CADENCE_SENSOR) {
+            Timber.tag("BLE").e("Device is not a cadence sensor")
+            return
+        }
+        cadenceSensorGatt?.close()
+        cadenceSensorGatt = bleDevice.device.connectGatt(context, false, cadenceSensorGattCallback)
+        Timber.tag("BLE").d("Connecting to cadence sensor: ${bleDevice.name}")
+    }
+
+    @SuppressLint("MissingPermission")
+    fun reconnectCadenceSensor(macAddress: String) {
+        try {
+            val device = bluetoothAdapter?.getRemoteDevice(macAddress)
+            if (device != null) {
+                cadenceSensorGatt?.close()
+                cadenceSensorGatt = device.connectGatt(context, false, cadenceSensorGattCallback)
+                Timber.tag("BLE").d("Reconnecting to cadence sensor: $macAddress")
+            } else {
+                Timber.tag("BLE").e("Bluetooth adapter not available")
+            }
+        } catch (e: IllegalArgumentException) {
+            Timber.tag("BLE").e("Invalid MAC address: $macAddress", e)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun disconnectCadenceSensor() {
+        cadenceSensorGatt?.disconnect()
+        cadenceSensorGatt?.close()
+        cadenceSensorGatt = null
+        _isCadenceSensorConnected.value = false
+        externalCadenceRpm = 0
+        isFirstExtCscMeasurement = true
+        previousExtCscCrankRevolutions = 0
+        previousExtCscCrankEventTime = 0
+        Timber.tag("BLE").d("Disconnected cadence sensor")
+    }
+
+    @SuppressLint("MissingPermission")
     fun connectTrainer(bleDevice: BleDevice) {
         if (bleDevice.deviceType != DeviceType.SMART_TRAINER) {
             Timber.tag("BLE").e("Device is not a smart trainer")
@@ -410,6 +470,7 @@ class BleManager(private val context: Context) {
         _controlMode.value = ControlMode.NONE
         _isTrainerConnected.value = false
         _trainerControlAvailable.value = false
+        _trainerProvidesCadence.value = false
         isFirstCscCrankMeasurement = true
         previousCscCrankRevolutions = 0
         previousCscCrankEventTime = 0
@@ -680,12 +741,12 @@ class BleManager(private val context: Context) {
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (characteristic.uuid == BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID) {
                 val (power, cadence) = parsePowerMeasurement(characteristic)
-                _powerData.value = PowerData(power, cadence)
+                _powerData.value = PowerData(power, effectiveCadence(cadence))
                 sampleLog { "Power: $power W, Cadence: $cadence rpm" }
             }
         }
     }
-    
+
     private val trainerGattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -750,6 +811,15 @@ class BleManager(private val context: Context) {
 
             val ftmsService = gatt.getService(BleConstants.FITNESS_MACHINE_SERVICE_UUID)
             val cpsService = gatt.getService(BleConstants.CYCLING_POWER_SERVICE_UUID)
+            val cscService = gatt.getService(BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID)
+
+            // Optimistic capability detection: if the trainer advertises FTMS or CSC, treat it as
+            // cadence-capable without waiting for the user to pedal. This drives FirstRunPairing's
+            // auto-skip of the Cadence step. CPS-only trainers stay false until a crank-flagged
+            // frame arrives — which is what we want, since plenty of CPS-only trainers omit cadence.
+            if (ftmsService != null || cscService != null) {
+                _trainerProvidesCadence.value = true
+            }
 
             if (ftmsService != null) {
                 Timber.tag("BLE").i("FTMS service found — using Indoor Bike Data + Control Point")
@@ -850,19 +920,76 @@ class BleManager(private val context: Context) {
                 BleConstants.CYCLING_POWER_MEASUREMENT_CHAR_UUID -> {
                     // Fallback: trainer without FTMS, reading power from CPS
                     val (power, cadence) = parsePowerMeasurement(characteristic)
+                    val raw = characteristic.value
+                    if (raw != null && raw.size >= 2) {
+                        val flags = ((raw[1].toInt() and 0xFF) shl 8) or (raw[0].toInt() and 0xFF)
+                        if (flags and 0x20 != 0) _trainerProvidesCadence.value = true
+                    }
                     val smoothedPower = powerSmoother.addReading(power)
-                    val effectiveCadence = if (cadence > 0) cadence else lastKnownCadence
-                    _powerData.value = PowerData(smoothedPower, effectiveCadence)
-                    sampleLog { "Trainer CPS fallback - Power: $power W (smoothed: $smoothedPower), Cadence: $effectiveCadence rpm (raw CPS: $cadence)" }
+                    val trainerCadence = if (cadence > 0) cadence else lastKnownCadence
+                    _powerData.value = PowerData(smoothedPower, effectiveCadence(trainerCadence))
+                    sampleLog { "Trainer CPS fallback - Power: $power W (smoothed: $smoothedPower), Cadence: $trainerCadence rpm (raw CPS: $cadence)" }
                 }
                 BleConstants.CSC_MEASUREMENT_CHAR_UUID -> {
                     val cadence = parseCscMeasurement(characteristic)
                     if (cadence >= 0) {
+                        _trainerProvidesCadence.value = true
                         lastKnownCadence = cadence
                         val currentPower = _powerData.value.power
-                        _powerData.value = PowerData(currentPower, cadence)
+                        _powerData.value = PowerData(currentPower, effectiveCadence(cadence))
                         sampleLog { "Trainer CSC cadence: $cadence rpm" }
                     }
+                }
+            }
+        }
+    }
+
+    private val cadenceSensorGattCallback = object : BluetoothGattCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            when (newState) {
+                BluetoothProfile.STATE_CONNECTED -> {
+                    Timber.tag("BLE").d("Cadence sensor connected (status=$status)")
+                    _isCadenceSensorConnected.value = true
+                    gatt.discoverServices()
+                }
+                BluetoothProfile.STATE_DISCONNECTED -> {
+                    Timber.tag("BLE").w("Cadence sensor disconnected (status=$status)")
+                    _isCadenceSensorConnected.value = false
+                    externalCadenceRpm = 0
+                    isFirstExtCscMeasurement = true
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Timber.tag("BLE").e("Cadence sensor service discovery failed: status=$status")
+                return
+            }
+            val service = gatt.getService(BleConstants.CYCLING_SPEED_CADENCE_SERVICE_UUID)
+            val char = service?.getCharacteristic(BleConstants.CSC_MEASUREMENT_CHAR_UUID)
+            if (char == null) {
+                Timber.tag("BLE").e("Cadence sensor: CSC Measurement characteristic missing")
+                return
+            }
+            gatt.setCharacteristicNotification(char, true)
+            val descriptor = char.getDescriptor(BleConstants.CLIENT_CHARACTERISTIC_CONFIG_UUID)
+            descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(descriptor)
+            Timber.tag("BLE").d("Subscribed to external cadence sensor CSC notifications")
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            if (characteristic.uuid == BleConstants.CSC_MEASUREMENT_CHAR_UUID) {
+                val cadence = parseExtCscMeasurement(characteristic)
+                if (cadence >= 0) {
+                    externalCadenceRpm = cadence
+                    val currentPower = _powerData.value.power
+                    _powerData.value = PowerData(currentPower, cadence)
+                    sampleLog { "External cadence sensor: $cadence rpm" }
                 }
             }
         }
@@ -880,10 +1007,14 @@ class BleManager(private val context: Context) {
         if (flags and 0x02 != 0 && value.size >= offset + 2) offset += 2 // avg speed
 
         var cadence = 0
-        if (flags and 0x04 != 0 && value.size >= offset + 2) {
-            val rawCadence = (value[offset].toInt() and 0xFF) or ((value[offset + 1].toInt() and 0xFF) shl 8)
-            cadence = rawCadence / 2
-            offset += 2
+        if (flags and 0x04 != 0) {
+            // Cadence field is present in this trainer's frames — record capability for first-run flow.
+            _trainerProvidesCadence.value = true
+            if (value.size >= offset + 2) {
+                val rawCadence = (value[offset].toInt() and 0xFF) or ((value[offset + 1].toInt() and 0xFF) shl 8)
+                cadence = rawCadence / 2
+                offset += 2
+            }
         }
 
         if (flags and 0x08 != 0 && value.size >= offset + 2) offset += 2 // avg cadence
@@ -902,7 +1033,7 @@ class BleManager(private val context: Context) {
 
         if (power > 0 || cadence > 0) {
             val smoothedPower = powerSmoother.addReading(power)
-            _powerData.value = PowerData(smoothedPower, cadence)
+            _powerData.value = PowerData(smoothedPower, effectiveCadence(cadence))
             sampleLog { "Indoor Bike Data - Power: $power W (smoothed: $smoothedPower), Cadence: $cadence RPM" }
         }
 
@@ -930,6 +1061,12 @@ class BleManager(private val context: Context) {
     private var previousCscCrankRevolutions: Int = 0
     private var previousCscCrankEventTime: Int = 0
     private var isFirstCscCrankMeasurement = true
+
+    // Independent CSC parser state for the dedicated external cadence sensor.
+    // Kept separate from the trainer's CSC state so the two GATTs don't trample each other's deltas.
+    private var previousExtCscCrankRevolutions: Int = 0
+    private var previousExtCscCrankEventTime: Int = 0
+    private var isFirstExtCscMeasurement = true
 
     // Held between packets; decays to 0 after ~5 missing measurements.
     private var lastKnownCadence: Int = 0
@@ -1022,6 +1159,38 @@ class BleManager(private val context: Context) {
 
     // Returns cadence in RPM from the CSC characteristic, or -1 if not yet calculable.
     private fun parseCscMeasurement(characteristic: BluetoothGattCharacteristic): Int {
+        return parseCscMeasurementInternal(
+            characteristic = characteristic,
+            getFirst = { isFirstCscCrankMeasurement },
+            setFirst = { isFirstCscCrankMeasurement = it },
+            getPrevRev = { previousCscCrankRevolutions },
+            setPrevRev = { previousCscCrankRevolutions = it },
+            getPrevTime = { previousCscCrankEventTime },
+            setPrevTime = { previousCscCrankEventTime = it }
+        )
+    }
+
+    private fun parseExtCscMeasurement(characteristic: BluetoothGattCharacteristic): Int {
+        return parseCscMeasurementInternal(
+            characteristic = characteristic,
+            getFirst = { isFirstExtCscMeasurement },
+            setFirst = { isFirstExtCscMeasurement = it },
+            getPrevRev = { previousExtCscCrankRevolutions },
+            setPrevRev = { previousExtCscCrankRevolutions = it },
+            getPrevTime = { previousExtCscCrankEventTime },
+            setPrevTime = { previousExtCscCrankEventTime = it }
+        )
+    }
+
+    private inline fun parseCscMeasurementInternal(
+        characteristic: BluetoothGattCharacteristic,
+        getFirst: () -> Boolean,
+        setFirst: (Boolean) -> Unit,
+        getPrevRev: () -> Int,
+        setPrevRev: (Int) -> Unit,
+        getPrevTime: () -> Int,
+        setPrevTime: (Int) -> Unit
+    ): Int {
         val value = characteristic.value ?: return -1
         if (value.isEmpty()) return -1
 
@@ -1036,20 +1205,20 @@ class BleManager(private val context: Context) {
             val crankEventTime = (value[offset + 2].toInt() and 0xFF) or
                     ((value[offset + 3].toInt() and 0xFF) shl 8)
 
-            if (isFirstCscCrankMeasurement) {
-                isFirstCscCrankMeasurement = false
-                previousCscCrankRevolutions = crankRevolutions
-                previousCscCrankEventTime = crankEventTime
+            if (getFirst()) {
+                setFirst(false)
+                setPrevRev(crankRevolutions)
+                setPrevTime(crankEventTime)
                 return -1
             }
 
-            var revDelta = crankRevolutions - previousCscCrankRevolutions
-            var timeDelta = crankEventTime - previousCscCrankEventTime
+            var revDelta = crankRevolutions - getPrevRev()
+            var timeDelta = crankEventTime - getPrevTime()
             if (revDelta < 0) revDelta += 65536
             if (timeDelta < 0) timeDelta += 65536
 
-            previousCscCrankRevolutions = crankRevolutions
-            previousCscCrankEventTime = crankEventTime
+            setPrevRev(crankRevolutions)
+            setPrevTime(crankEventTime)
 
             if (timeDelta > 0) {
                 // Crank event time is in 1/1024 s units.
@@ -1062,12 +1231,17 @@ class BleManager(private val context: Context) {
         return -1
     }
 
+    // External cadence sensor wins over trainer cadence when paired and connected.
+    private fun effectiveCadence(rawCadence: Int): Int =
+        if (_isCadenceSensorConnected.value) externalCadenceRpm else rawCadence
+
     @SuppressLint("MissingPermission")
     fun cleanup() {
         stopScan()
         disconnectHeartRateMonitor()
         disconnectPowerMeter()
         disconnectTrainer()
+        disconnectCadenceSensor()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioManager.abandonAudioFocusRequest(audioFocusRequest!!)
         } else {

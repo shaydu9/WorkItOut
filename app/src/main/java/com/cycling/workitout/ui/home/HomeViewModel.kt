@@ -66,6 +66,12 @@ class HomeViewModel(
     val isHeartRateConnected: StateFlow<Boolean> = bleManager.isHeartRateConnected
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val isCadenceSensorConnected: StateFlow<Boolean> = bleManager.isCadenceSensorConnected
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val trainerProvidesCadence: StateFlow<Boolean> = bleManager.trainerProvidesCadence
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -86,6 +92,7 @@ class HomeViewModel(
                     DeviceType.HEART_RATE_MONITOR -> bleManager.reconnectHeartRateMonitor(mac)
                     DeviceType.SMART_TRAINER -> bleManager.reconnectTrainer(mac)
                     DeviceType.POWER_METER -> bleManager.reconnectPowerMeter(mac)
+                    DeviceType.CADENCE_SENSOR -> bleManager.reconnectCadenceSensor(mac)
                     else -> {}
                 }
             }
@@ -97,6 +104,7 @@ class HomeViewModel(
             when (device.deviceType) {
                 DeviceType.SMART_TRAINER -> bleManager.connectTrainer(device)
                 DeviceType.HEART_RATE_MONITOR -> bleManager.connectHeartRateMonitor(device)
+                DeviceType.CADENCE_SENSOR -> bleManager.connectCadenceSensor(device)
                 else -> Unit
             }
             WorkItOutApplication.deviceRepository.saveDevice(device)

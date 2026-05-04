@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -61,6 +62,7 @@ fun FirstRunPairingScreen(
     val devices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val trainerConnected by viewModel.isTrainerConnected.collectAsStateWithLifecycle()
+    val cadenceSensorConnected by viewModel.isCadenceSensorConnected.collectAsStateWithLifecycle()
     val hrConnected by viewModel.isHeartRateConnected.collectAsStateWithLifecycle()
     val ftp by viewModel.ftp.collectAsStateWithLifecycle()
     val weightKg by viewModel.weightKg.collectAsStateWithLifecycle()
@@ -72,6 +74,11 @@ fun FirstRunPairingScreen(
     // Auto-advance when the currently-pairing device connects.
     LaunchedEffect(trainerConnected, step) {
         if (step == PairingStep.TRAINER && trainerConnected) {
+            viewModel.stopScan()
+        }
+    }
+    LaunchedEffect(cadenceSensorConnected, step) {
+        if (step == PairingStep.CADENCE && cadenceSensorConnected) {
             viewModel.stopScan()
         }
     }
@@ -91,6 +98,7 @@ fun FirstRunPairingScreen(
             devices = devices,
             isScanning = isScanning,
             trainerConnected = trainerConnected,
+            cadenceSensorConnected = cadenceSensorConnected,
             hrConnected = hrConnected,
             ftp = ftp,
             weightKg = weightKg,
@@ -115,6 +123,7 @@ private fun FirstRunPairingScreenContent(
     devices: List<BleDevice>,
     isScanning: Boolean,
     trainerConnected: Boolean,
+    cadenceSensorConnected: Boolean,
     hrConnected: Boolean,
     ftp: Int,
     weightKg: Int,
@@ -160,6 +169,21 @@ private fun FirstRunPairingScreenContent(
                 allowSkip = true
             )
 
+            PairingStep.CADENCE -> PairingStepContent(
+                title = "Pair a Cadence Sensor",
+                subtitle = "Your trainer doesn't seem to broadcast cadence. Pair a separate BLE cadence sensor for accurate RPM, or skip and we'll go without.",
+                connected = cadenceSensorConnected,
+                deviceTypeFilter = DeviceType.CADENCE_SENSOR,
+                devices = devices,
+                isScanning = isScanning,
+                permissionDenied = permissionDenied,
+                onScan = onScan,
+                onStopScan = onStopScan,
+                onDeviceClick = onDeviceClick,
+                onNext = onNextStep,
+                allowSkip = true
+            )
+
             PairingStep.HEART_RATE -> PairingStepContent(
                 title = "Pair your Heart Rate Monitor",
                 subtitle = "Optional, but recommended for accurate training.",
@@ -195,6 +219,7 @@ private fun FirstRunPairingScreenContent(
 private fun StepIndicator(currentStep: PairingStep) {
     val steps = listOf(
         "Trainer" to PairingStep.TRAINER,
+        "Cadence" to PairingStep.CADENCE,
         "HR" to PairingStep.HEART_RATE,
         "You" to PairingStep.PROFILE,
         "Done" to PairingStep.READY
@@ -305,6 +330,7 @@ private fun DeviceRow(device: BleDevice, onClick: () -> Unit) {
             val icon = when (device.deviceType) {
                 DeviceType.SMART_TRAINER -> Icons.Default.FitnessCenter
                 DeviceType.HEART_RATE_MONITOR -> Icons.Default.FavoriteBorder
+                DeviceType.CADENCE_SENSOR -> Icons.Default.Cached
                 else -> Icons.Default.Bluetooth
             }
             Icon(icon, contentDescription = null)
