@@ -32,8 +32,8 @@ android {
         applicationId = "com.cycling.workitout"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.4"
+        versionCode = 5
+        versionName = "1.04"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
