@@ -1,13 +1,17 @@
 package com.cycling.workitout.ui.firstrun
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,31 +20,34 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.BleDevice
 import com.cycling.workitout.data.DeviceType
-
-// API 31+ wants BLUETOOTH_SCAN/CONNECT; older Androids piggyback on FINE_LOCATION for scans.
-private val REQUIRED_BLE_PERMISSIONS: Array<String> =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        arrayOf(
-            Manifest.permission.BLUETOOTH_SCAN,
-            Manifest.permission.BLUETOOTH_CONNECT
-        )
-    } else {
-        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-    }
+import com.cycling.workitout.ui.components.rememberBlePermissionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,37 +64,8 @@ fun FirstRunPairingScreen(
     val weightKg by viewModel.weightKg.collectAsStateWithLifecycle()
     val maxHeartRate by viewModel.maxHeartRate.collectAsStateWithLifecycle()
 
-    val context = LocalContext.current
     var permissionDenied by remember { mutableStateOf(false) }
-
-    // Lets one launcher serve both scan buttons — stash the action and run it once permissions land.
-    var pendingPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        val allGranted = REQUIRED_BLE_PERMISSIONS.all { result[it] == true }
-        if (allGranted) {
-            permissionDenied = false
-            pendingPermissionAction?.invoke()
-        } else {
-            permissionDenied = true
-        }
-        pendingPermissionAction = null
-    }
-
-    // Run the action immediately if permissions are already held, otherwise prompt first.
-    val runWithBlePermissions: (() -> Unit) -> Unit = { action ->
-        val allGranted = REQUIRED_BLE_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
-        if (allGranted) {
-            action()
-        } else {
-            pendingPermissionAction = action
-            permissionLauncher.launch(REQUIRED_BLE_PERMISSIONS)
-        }
-    }
+    val runWithBlePermissions = rememberBlePermissionState(onDenied = { permissionDenied = true })
 
     // Auto-advance when the currently-pairing device connects.
     LaunchedEffect(trainerConnected, step) {

@@ -71,6 +71,7 @@ import com.cycling.workitout.ui.components.DevicePairingDialog
 import com.cycling.workitout.ui.components.rememberBlePermissionState
 import com.cycling.workitout.ui.library.WattsPercentToggle
 import com.cycling.workitout.ui.library.formatTarget
+import timber.log.Timber
 import java.util.Locale
 
 private val DURATION_OPTIONS = listOf(30, 45, 60, 75, 90)
@@ -92,9 +93,14 @@ fun HomeScreen(
     // Dialog State
     var pairingDialogDeviceType by remember { mutableStateOf<DeviceType?>(null) }
     val withBlePermission = rememberBlePermissionState()
+    LaunchedEffect(Unit) {
+        withBlePermission {
+            viewModel.reconnectSavedDevices()
+        }
+    }
 
-    val onTrainerTap = { withBlePermission {pairingDialogDeviceType = DeviceType.SMART_TRAINER }}
-    val onHrTap = { withBlePermission {pairingDialogDeviceType = DeviceType.HEART_RATE_MONITOR }}
+    val onTrainerTap = { withBlePermission { pairingDialogDeviceType = DeviceType.SMART_TRAINER } }
+    val onHrTap = { withBlePermission { pairingDialogDeviceType = DeviceType.HEART_RATE_MONITOR } }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(state.error) {
@@ -111,7 +117,10 @@ fun HomeScreen(
                 title = { Text("Today's Workout") },
                 actions = {
                     IconButton(onClick = onOpenLibrary) {
-                        Icon(Icons.Default.CollectionsBookmark, contentDescription = "Workout library")
+                        Icon(
+                            Icons.Default.CollectionsBookmark,
+                            contentDescription = "Workout library"
+                        )
                     }
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Default.History, contentDescription = "Ride history")
@@ -202,7 +211,11 @@ private fun HomeScreenContent(
 
         Text("FTP: ${ftp}W", style = MaterialTheme.typography.labelLarge)
 
-        Text("Duration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Duration",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
@@ -216,7 +229,11 @@ private fun HomeScreenContent(
             }
         }
 
-        Text("Difficulty", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Difficulty",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
@@ -479,7 +496,11 @@ private fun IntervalRow(interval: WorkoutIntervalDef, displayAsPercent: Boolean 
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(interval.name, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                interval.name,
+                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.bodyMedium
+            )
             Text(
                 interval.zone.label,
                 style = MaterialTheme.typography.labelSmall,
@@ -540,8 +561,10 @@ private fun DeviceStatusPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-    val fg = if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+    val bg =
+        if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+    val fg =
+        if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
     val label = if (connected) "$connectedLabel connected" else "$disconnectedLabel — tap"
     Surface(
         shape = RoundedCornerShape(50),

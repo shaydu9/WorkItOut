@@ -15,6 +15,7 @@ import com.cycling.workitout.ble.BleManager
 import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.preferences.ThemeMode
 import com.cycling.workitout.data.strava.StravaClient
+import com.cycling.workitout.ui.components.hasBlePermissions
 import com.cycling.workitout.ui.navigation.WorkItOutNavigation
 import com.cycling.workitout.ui.theme.WorkItOutTheme
 import kotlinx.coroutines.flow.first
@@ -48,6 +49,10 @@ class MainActivity : ComponentActivity() {
 
         // Auto-reconnect previously paired devices
         lifecycleScope.launch {
+            if (!hasBlePermissions(this@MainActivity)) {
+                Timber.tag("BLE").d("Skipping auto-connect: BLE permissions not granted")
+                return@launch
+            }
             val saved = WorkItOutApplication.deviceRepository.getAllDevices().first()
             saved.forEach { device ->
                 Timber.tag("BLE").d("Auto-reconnecting ${device.deviceType} ${device.macAddress}")

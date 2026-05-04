@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -75,6 +76,22 @@ class HomeViewModel(
 
     fun stopScan() { viewModelScope.launch { bleManager.stopScan() }}
 
+    fun reconnectSavedDevices() {
+        viewModelScope.launch {
+            val saved = WorkItOutApplication.deviceRepository.getAllDevices().first()
+            saved.forEach { device ->
+                Timber.tag("BLE").d("Reconnecting ${device.deviceType} ${device.macAddress}")
+                val mac = device.macAddress
+                when (device.deviceType) {
+                    DeviceType.HEART_RATE_MONITOR -> bleManager.reconnectHeartRateMonitor(mac)
+                    DeviceType.SMART_TRAINER -> bleManager.reconnectTrainer(mac)
+                    DeviceType.POWER_METER -> bleManager.reconnectPowerMeter(mac)
+                    else -> {}
+                }
+            }
+        }
+    }
+
     fun connectDevice(device: BleDevice) {
         viewModelScope.launch {
             when (device.deviceType) {
@@ -82,6 +99,7 @@ class HomeViewModel(
                 DeviceType.HEART_RATE_MONITOR -> bleManager.connectHeartRateMonitor(device)
                 else -> Unit
             }
+            WorkItOutApplication.deviceRepository.saveDevice(device)
         }
     }
 

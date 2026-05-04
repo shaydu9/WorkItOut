@@ -1,5 +1,6 @@
 package com.cycling.workitout.ui.components
 
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,7 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 
-private val REQUIRED_BLE_PERMISSIONS: Array<String> =
+internal val REQUIRED_BLE_PERMISSIONS: Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(
             android.Manifest.permission.BLUETOOTH_SCAN,
@@ -24,8 +25,13 @@ private val REQUIRED_BLE_PERMISSIONS: Array<String> =
         )
     }
 
+fun hasBlePermissions(context: Context): Boolean =
+    REQUIRED_BLE_PERMISSIONS.all {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
+
 @Composable
-fun rememberBlePermissionState(): ((() -> Unit) -> Unit) {
+fun rememberBlePermissionState(onDenied: (() -> Unit)? = null): ((() -> Unit) -> Unit) {
     val context = LocalContext.current
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -34,15 +40,14 @@ fun rememberBlePermissionState(): ((() -> Unit) -> Unit) {
     ) { result ->
         if (REQUIRED_BLE_PERMISSIONS.all { result[it] == true }) {
             pendingAction?.invoke()
+        } else {
+            onDenied?.invoke()
         }
         pendingAction = null
     }
 
     return { action ->
-        val allGranted = REQUIRED_BLE_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
-        if (allGranted) action()
+        if (hasBlePermissions(context)) action()
         else {
             pendingAction = action
             launcher.launch(REQUIRED_BLE_PERMISSIONS)
