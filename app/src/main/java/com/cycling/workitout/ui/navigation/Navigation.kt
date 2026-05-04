@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -162,6 +163,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
 
         composable(Screen.ActiveWorkout.route) { backStackEntry ->
             val workout = WorkoutSession.pendingWorkout
+            val context = LocalContext.current
             // Scope the VM to the NavBackStackEntry: when this entry is popped (Stop → ride
             // saved → popUpTo, or onNavigateBack), Compose-Navigation calls onCleared(),
             // which releases the BLE ERG token and unwires engine callbacks. With the
@@ -173,7 +175,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                 factory = object : ViewModelProvider.Factory {
                     @Suppress("UNCHECKED_CAST")
                     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                        WorkoutViewModel(bleManager, workout) as T
+                        WorkoutViewModel(bleManager, context.applicationContext, workout) as T
                 }
             )
             // Navigate to ride detail once saved; pop workout so Back goes Home, not back into a stopped workout.

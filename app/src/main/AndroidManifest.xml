@@ -18,6 +18,11 @@
     <!-- Location permission needed for BLE scanning on Android 10-11 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     
+    <!-- Foreground service permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
+        tools:targetApi="34" />
+
     <!-- Declare BLE feature -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
@@ -63,6 +68,12 @@
                     android:pathPrefix="/strava-callback" />
             </intent-filter>
         </activity>
+
+        <!-- Keeps the workout process alive while the user is outside the app. -->
+        <service
+            android:name=".service.WorkoutForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <!-- FileProvider exposes generated .fit workout files to share sheets / Strava. -->
         <provider

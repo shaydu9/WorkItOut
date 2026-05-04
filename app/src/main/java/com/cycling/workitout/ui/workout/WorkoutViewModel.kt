@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
+import com.cycling.workitout.service.WorkoutForegroundService
 import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
@@ -42,6 +43,7 @@ import kotlin.math.sqrt
 
 class WorkoutViewModel(
     private val bleManager: BleManager,
+    private val appContext: Context,
     workoutDefinition: WorkoutDefinition? = null,
     private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository,
     private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences
@@ -181,6 +183,7 @@ class WorkoutViewModel(
                 bleManager.requestFtmsControl(ergToken)
                 bleManager.startFtmsWorkout(ergToken)
             }
+            WorkoutForegroundService.start(appContext)
         }
 
         workoutEngine.onWorkoutStopped = {
@@ -188,6 +191,7 @@ class WorkoutViewModel(
                 bleManager.stopFtmsWorkout(ergToken)
             }
             bleManager.setWorkoutActive(false)
+            WorkoutForegroundService.stop(appContext)
         }
 
         // Forward sensor data to engine for recording
@@ -223,6 +227,22 @@ class WorkoutViewModel(
         // ERG watchdog — runs for the lifetime of the VM, only acts while a workout is RUNNING
         // and ERG is enabled. Cheap (1 Hz tick reading already-cached StateFlow values).
         viewModelScope.launch { runErgWatchdog() }
+
+        // Keep the foreground-service notification in sync with elapsed time + interval target.
+        viewModelScope.launch {
+            workoutEngine.progress.collect { progress ->
+                if (progress.workoutState == WorkoutState.RUNNING ||
+                    progress.workoutState == WorkoutState.PAUSED) {
+                    val totalSec = progress.totalElapsedSeconds
+                    val h = totalSec / 3600
+                    val m = (totalSec % 3600) / 60
+                    val s = totalSec % 60
+                    val elapsed = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+                    val target = if (progress.targetPowerWatts > 0) "${progress.targetPowerWatts}W" else ""
+                    WorkoutForegroundService.update(appContext, elapsed, target)
+                }
+            }
+        }
     }
 
     fun startWorkout() {
@@ -487,6 +507,7 @@ class WorkoutViewModel(
         // Idempotent — safe even if a newer VM has already preempted us.
         bleManager.releaseErgControl(ergToken)
         bleManager.setWorkoutActive(false)
+        WorkoutForegroundService.stop(appContext)
         Timber.tag("ERG").d("WorkoutViewModel cleared (vm=${System.identityHashCode(this)}) — released, engine callbacks unwired")
     }
 
