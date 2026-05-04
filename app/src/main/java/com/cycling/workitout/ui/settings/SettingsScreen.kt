@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -112,8 +113,14 @@ private fun SettingsScreenContent(
     var showSignOutDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
+    val isTablet = LocalConfiguration.current.screenWidthDp >= 600
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
+    ) {
     LazyColumn(
-        modifier = modifier
+        modifier = (if (isTablet) Modifier.widthIn(max = 640.dp) else Modifier)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -326,6 +333,7 @@ private fun SettingsScreenContent(
             )
         }
     }
+    } // end Box
 
     if (showThemeDialog) {
         ThemeSelectionDialog(

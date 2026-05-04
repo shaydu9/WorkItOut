@@ -3,6 +3,10 @@ package com.cycling.workitout.ui.history
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDone
@@ -75,10 +79,13 @@ private fun HistoryScreenContent(
             }
         }
     } else {
-        LazyColumn(
+        val isTablet = LocalConfiguration.current.screenWidthDp >= 600
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(if (isTablet) 2 else 1),
             modifier = modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {

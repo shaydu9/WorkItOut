@@ -4,6 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -100,21 +105,28 @@ private fun LibraryScreenContent(
     onStartWorkout: (WorkoutDefinition) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
+    val isTablet = LocalConfiguration.current.screenWidthDp >= 600
+    val columns = if (isTablet) 2 else 1
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(vertical = 12.dp)
     ) {
         if (defaultWorkouts.isNotEmpty()) {
-            item { SectionHeader("Starter workouts") }
+            item(span = { GridItemSpan(maxCurrentLineSpan) }) {
+                SectionHeader("Starter workouts")
+            }
 
             val byDuration = defaultWorkouts.groupBy { it.totalDurationSeconds / 60 }
                 .toSortedMap()
 
             byDuration.forEach { (minutes, group) ->
-                item {
+                item(span = { GridItemSpan(maxCurrentLineSpan) }) {
                     Text(
                         "$minutes min",
                         style = MaterialTheme.typography.titleSmall,
@@ -134,13 +146,13 @@ private fun LibraryScreenContent(
             }
         }
 
-        item {
+        item(span = { GridItemSpan(maxCurrentLineSpan) }) {
             Spacer(Modifier.height(12.dp))
             SectionHeader("Your library")
         }
 
         if (savedWorkouts.isEmpty()) {
-            item {
+            item(span = { GridItemSpan(maxCurrentLineSpan) }) {
                 Text(
                     "Tap the heart on a starter above, or generate a workout from Home and save it here.",
                     style = MaterialTheme.typography.bodyMedium,

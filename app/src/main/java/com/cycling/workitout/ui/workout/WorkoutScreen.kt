@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -122,78 +124,149 @@ private fun WorkoutScreenContent(
     modifier: Modifier = Modifier
 ) {
     val zoneColor = Color(progress.currentZone.colorHex)
+    val isTablet = LocalConfiguration.current.screenWidthDp >= 600
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.5f)
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(12.dp)
-        ) {
-            WorkoutProgressGraph(
-                intervals = workoutIntervals,
-                currentTimeSeconds = progress.totalElapsedSeconds,
-                totalDurationSeconds = progress.totalDurationSeconds,
-                recordedPowerPoints = recordedData.map {
-                    PowerDataPoint(it.timeSeconds, it.actualPower)
-                },
-                workoutState = progress.workoutState,
-                workoutName = progress.workoutName
+    if (isTablet) {
+        Row(modifier = modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(0.55f)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(12.dp)
+            ) {
+                WorkoutProgressGraph(
+                    intervals = workoutIntervals,
+                    currentTimeSeconds = progress.totalElapsedSeconds,
+                    totalDurationSeconds = progress.totalDurationSeconds,
+                    recordedPowerPoints = recordedData.map {
+                        PowerDataPoint(it.timeSeconds, it.actualPower)
+                    },
+                    workoutState = progress.workoutState,
+                    workoutName = progress.workoutName
+                )
+            }
+
+            VerticalDivider(
+                color = zoneColor.copy(alpha = 0.3f),
+                thickness = 2.dp
             )
+
+            Column(
+                modifier = Modifier
+                    .weight(0.45f)
+                    .fillMaxHeight()
+                    .background(zoneColor.copy(alpha = 0.05f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                ControlBar(
+                    workoutState = progress.workoutState,
+                    intervalName = progress.currentIntervalName,
+                    onStart = onStart,
+                    onPause = onPause,
+                    onResume = onResume,
+                    onStopRequested = { onShowEndDialog(true) },
+                    onBack = onBack,
+                    exportState = exportState,
+                    stravaConnected = stravaConnected,
+                    stravaUploadState = stravaUploadState,
+                    onUploadToStrava = onUploadToStrava
+                )
+                Spacer(Modifier.height(8.dp))
+                StatsGrid(
+                    threeSecPower = metrics.power,
+                    targetPower = progress.targetPowerWatts,
+                    intervalRemaining = progress.intervalRemainingSeconds,
+                    cadence = metrics.cadence,
+                    heartRate = metrics.heartRate,
+                    zoneColor = zoneColor,
+                    displayAsPercent = displayAsPercent,
+                    currentFtp = currentFtp,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                )
+                Spacer(Modifier.height(8.dp))
+                ErgToggleRow(
+                    ergEnabled = ergEnabled,
+                    ergRearming = ergRearming,
+                    onErgChange = onErgChange,
+                    displayAsPercent = displayAsPercent,
+                    onDisplayChange = onDisplayChange
+                )
+            }
         }
-
-        HorizontalDivider(
-            color = zoneColor.copy(alpha = 0.3f),
-            thickness = 2.dp
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.5f)
-                .background(zoneColor.copy(alpha = 0.05f))
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            ControlBar(
-                workoutState = progress.workoutState,
-                intervalName = progress.currentIntervalName,
-                onStart = onStart,
-                onPause = onPause,
-                onResume = onResume,
-                onStopRequested = { onShowEndDialog(true) },
-                onBack = onBack,
-                exportState = exportState,
-                stravaConnected = stravaConnected,
-                stravaUploadState = stravaUploadState,
-                onUploadToStrava = onUploadToStrava
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            StatsGrid(
-                threeSecPower = metrics.power,
-                targetPower = progress.targetPowerWatts,
-                intervalRemaining = progress.intervalRemainingSeconds,
-                cadence = metrics.cadence,
-                heartRate = metrics.heartRate,
-                zoneColor = zoneColor,
-                displayAsPercent = displayAsPercent,
-                currentFtp = currentFtp,
+    } else {
+        Column(modifier = modifier.fillMaxSize()) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .weight(0.5f)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(12.dp)
+            ) {
+                WorkoutProgressGraph(
+                    intervals = workoutIntervals,
+                    currentTimeSeconds = progress.totalElapsedSeconds,
+                    totalDurationSeconds = progress.totalDurationSeconds,
+                    recordedPowerPoints = recordedData.map {
+                        PowerDataPoint(it.timeSeconds, it.actualPower)
+                    },
+                    workoutState = progress.workoutState,
+                    workoutName = progress.workoutName
+                )
+            }
+
+            HorizontalDivider(
+                color = zoneColor.copy(alpha = 0.3f),
+                thickness = 2.dp
             )
 
-            Spacer(Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.5f)
+                    .background(zoneColor.copy(alpha = 0.05f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                ControlBar(
+                    workoutState = progress.workoutState,
+                    intervalName = progress.currentIntervalName,
+                    onStart = onStart,
+                    onPause = onPause,
+                    onResume = onResume,
+                    onStopRequested = { onShowEndDialog(true) },
+                    onBack = onBack,
+                    exportState = exportState,
+                    stravaConnected = stravaConnected,
+                    stravaUploadState = stravaUploadState,
+                    onUploadToStrava = onUploadToStrava
+                )
 
-            ErgToggleRow(
-                ergEnabled = ergEnabled,
-                ergRearming = ergRearming,
-                onErgChange = onErgChange,
-                displayAsPercent = displayAsPercent,
-                onDisplayChange = onDisplayChange
-            )
+                Spacer(Modifier.height(8.dp))
+
+                StatsGrid(
+                    threeSecPower = metrics.power,
+                    targetPower = progress.targetPowerWatts,
+                    intervalRemaining = progress.intervalRemainingSeconds,
+                    cadence = metrics.cadence,
+                    heartRate = metrics.heartRate,
+                    zoneColor = zoneColor,
+                    displayAsPercent = displayAsPercent,
+                    currentFtp = currentFtp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                ErgToggleRow(
+                    ergEnabled = ergEnabled,
+                    ergRearming = ergRearming,
+                    onErgChange = onErgChange,
+                    displayAsPercent = displayAsPercent,
+                    onDisplayChange = onDisplayChange
+                )
+            }
         }
     }
 
