@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "596435170722-k1edued8civ1ppd3nj4vku4ksrue8rlt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cycling.workitout",
+            "certificate_hash": "a58537832aa55f72d425fc178fb459360ccadf62"
+          }
+        },
+        {
           "client_id": "596435170722-mqu2ch8nf414d65cgfhegcfcq7g0noo6.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
