@@ -10,8 +10,12 @@ import com.cycling.workitout.data.PowerZone
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.data.ai.AiWorkoutService
+import com.cycling.workitout.data.database.ActiveWorkoutEntity
+import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.data.firestore.SavedWorkout
 import com.cycling.workitout.data.preferences.ThemePreferences
+import com.cycling.workitout.data.workout.WorkoutCheckpointStore
+import com.cycling.workitout.ui.workout.CompactDataPoint
 import com.cycling.workitout.workout.LocalWorkoutGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,7 +44,8 @@ data class HomeUiState(
     val error: String? = null,
     val preview: WorkoutDefinition? = null,
     val customPromptOpen: Boolean = false,
-    val customPromptText: String = ""
+    val customPromptText: String = "",
+    val recoveryCheckpoint: ActiveWorkoutEntity? = null
 )
 
 class HomeViewModel(
@@ -52,6 +57,10 @@ class HomeViewModel(
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val checkpointStore = WorkoutCheckpointStore(
+        WorkItOutApplication.database.activeWorkoutDao()
+    )
 
     val ftp: StateFlow<Int> = WorkItOutApplication.userProfileRepository.profile
         .map { it.ftpWatts }
@@ -82,6 +91,23 @@ class HomeViewModel(
 
     fun stopScan() { viewModelScope.launch { bleManager.stopScan() }}
 
+    init {
+        viewModelScope.launch {
+            val checkpoint = checkpointStore.load()
+            if (checkpoint != null && checkpoint.dataPointsJson.length > 10) {
+                // Rough check: decode and count points to filter out sub-30s rides
+                val points = try {
+                    Json.decodeFromString<List<CompactDataPoint>>(checkpoint.dataPointsJson)
+                } catch (e: Exception) { emptyList() }
+                if (points.size > 30) {
+                    _uiState.value = _uiState.value.copy(recoveryCheckpoint = checkpoint)
+                } else {
+                    checkpointStore.clear() // Too short, silently discard
+                }
+            }
+        }
+    }
+
     fun reconnectSavedDevices() {
         viewModelScope.launch {
             val saved = WorkItOutApplication.deviceRepository.getAllDevices().first()
@@ -108,6 +134,64 @@ class HomeViewModel(
                 else -> Unit
             }
             WorkItOutApplication.deviceRepository.saveDevice(device)
+        }
+    }
+
+    fun dismissRecovery() {
+        viewModelScope.launch {
+            checkpointStore.clear()
+            _uiState.value = _uiState.value.copy(recoveryCheckpoint = null)
+        }
+    }
+
+    fun saveRecoverRide() {
+        val checkpoint = _uiState.value.recoveryCheckpoint ?: return
+        viewModelScope.launch {
+            try {
+                val points =
+                    Json.decodeFromString<List<CompactDataPoint>>(checkpoint.dataPointsJson)
+                if (points.isEmpty()) {
+                    dismissRecovery()
+                    return@launch
+                }
+
+                val power = points.map { it.p }
+                val avgPower = power.average().toInt()
+                val maxPower = power.max()
+                val avgHr = points.map { it.hr }.average().toInt()
+                val maxHr = points.maxOf { it.hr }
+                val avgCadence = points.map { it.c }.average().toInt()
+                val durationSec = points.lastOrNull()?.t ?: 0
+
+                val ride = Ride(
+                    name = checkpoint.workoutName,
+                    startedAtMillis = checkpoint.startedAtMillis,
+                    avgPowerWatts = avgPower,
+                    maxPowerWatts = maxPower,
+                    avgHeartRate = avgHr,
+                    maxHeartRate = maxHr,
+                    avgCadence = avgCadence,
+                    durationSeconds = durationSec,
+                    normalizedPowerWatts = 0, //NP needs raw 1-Hz data — compact points are already averaged
+                    ftpWatts = checkpoint.ftpWatts,
+                    dataPointsJson = checkpoint.dataPointsJson
+                )
+
+                val newId = WorkItOutApplication.rideRepository.saveRide(ride)
+                checkpointStore.clear()
+                _uiState.value = _uiState.value.copy(recoveryCheckpoint = null)
+                Timber.tag("RECOVERY")
+                    .i("Recovered ride saved: ${checkpoint.workoutName} (id=$newId)")
+
+                // Trigger Strava auto-upload if enabled
+                val autoUpload = preferences.autoUploadToStravaOnFinish.first()
+                val stravaRepo = WorkItOutApplication.stravaRepository
+                if (autoUpload && stravaRepo.isConnected.value) {
+                    WorkItOutApplication.historyStravaUploader.upload(newId)
+                }
+            } catch (t: Throwable) {
+                Timber.tag("RECOVERY").e(t, "Failed to save recovered ride")
+            }
         }
     }
 

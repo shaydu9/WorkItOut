@@ -8,13 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [SavedDeviceEntity::class],
-    version = 8,
+    entities = [SavedDeviceEntity::class, ActiveWorkoutEntity::class],
+    version = 9,
     exportSchema = false
 )
 abstract class WorkItOutDatabase : RoomDatabase() {
 
     abstract fun savedDeviceDao(): SavedDeviceDao
+
+    abstract fun activeWorkoutDao(): ActiveWorkoutDao
 
     companion object {
         @Volatile
@@ -28,7 +30,8 @@ abstract class WorkItOutDatabase : RoomDatabase() {
 
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS device_profile_cross_ref (
                         macAddress TEXT NOT NULL,
                         profileId TEXT NOT NULL,
@@ -36,15 +39,19 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                         FOREIGN KEY(macAddress) REFERENCES saved_devices(macAddress) ON DELETE CASCADE,
                         FOREIGN KEY(profileId) REFERENCES equipment_profiles(profileId) ON DELETE CASCADE
                     )
-                """)
+                """
+                )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_device_profile_cross_ref_macAddress ON device_profile_cross_ref(macAddress)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_device_profile_cross_ref_profileId ON device_profile_cross_ref(profileId)")
-                db.execSQL("""
+                db.execSQL(
+                    """
                     INSERT INTO device_profile_cross_ref (macAddress, profileId)
                     SELECT macAddress, profileId FROM saved_devices
                     WHERE profileId IS NOT NULL
-                """)
-                db.execSQL("""
+                """
+                )
+                db.execSQL(
+                    """
                     CREATE TABLE saved_devices_new (
                         macAddress TEXT PRIMARY KEY NOT NULL,
                         manufacturerName TEXT NOT NULL,
@@ -54,13 +61,16 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                         lastConnectedTimestamp INTEGER NOT NULL,
                         connectionCount INTEGER NOT NULL
                     )
-                """)
-                db.execSQL("""
+                """
+                )
+                db.execSQL(
+                    """
                     INSERT INTO saved_devices_new
                     SELECT macAddress, manufacturerName, customName, deviceType,
                            firstConnectedTimestamp, lastConnectedTimestamp, connectionCount
                     FROM saved_devices
-                """)
+                """
+                )
                 db.execSQL("DROP TABLE saved_devices")
                 db.execSQL("ALTER TABLE saved_devices_new RENAME TO saved_devices")
             }
@@ -80,7 +90,8 @@ abstract class WorkItOutDatabase : RoomDatabase() {
         /** v4 → v5: add completed_rides table for workout history. */
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS completed_rides (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         name TEXT NOT NULL,
@@ -95,7 +106,8 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                         ftpWatts INTEGER NOT NULL,
                         dataPointsJson TEXT NOT NULL
                     )
-                """)
+                """
+                )
             }
         }
 
@@ -123,7 +135,8 @@ abstract class WorkItOutDatabase : RoomDatabase() {
         /** v5 → v6: add saved_workouts table for the workout library. */
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS saved_workouts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         workoutId TEXT NOT NULL,
@@ -133,7 +146,27 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                         savedAtMillis INTEGER NOT NULL,
                         intervalsJson TEXT NOT NULL
                     )
-                """)
+                """
+                )
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+            CREATE TABLE IF NOT EXISTS active_workout (
+                id INTEGER PRIMARY KEY NOT NULL,
+                workoutDefinitionId TEXT,
+                workoutName TEXT NOT NULL,
+                startedAtMillis INTEGER NOT NULL,
+                plannedDurationSeconds INTEGER NOT NULL,
+                ftpWatts INTEGER NOT NULL,
+                dataPointsJson TEXT NOT NULL,
+                lastCheckpointAtMillis INTEGER NOT NULL
+            )
+        """
+                )
             }
         }
 
@@ -144,7 +177,16 @@ abstract class WorkItOutDatabase : RoomDatabase() {
                     WorkItOutDatabase::class.java,
                     "workitout_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
+                    )
                     // IMPORTANT: do NOT add fallbackToDestructiveMigration() here.
                     // It silently wipes the user's ride history (completed_rides) on any
                     // schema bump without a matching migration. Every version jump must

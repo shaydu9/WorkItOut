@@ -12,10 +12,12 @@ import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.WorkoutState
+import com.cycling.workitout.data.database.ActiveWorkoutEntity
 import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.data.export.WorkoutExporter
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
+import com.cycling.workitout.data.workout.WorkoutCheckpointStore
 import com.cycling.workitout.ui.components.WorkoutInterval
 import com.cycling.workitout.workout.VirtualSpeedEstimator
 import com.cycling.workitout.workout.WorkoutEngine
@@ -46,7 +48,10 @@ class WorkoutViewModel(
     private val appContext: Context,
     workoutDefinition: WorkoutDefinition? = null,
     private val stravaRepository: StravaRepository = WorkItOutApplication.stravaRepository,
-    private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences
+    private val themePreferences: ThemePreferences = WorkItOutApplication.themePreferences,
+    private val checkpointStore: WorkoutCheckpointStore = WorkoutCheckpointStore(
+        WorkItOutApplication.database.activeWorkoutDao()
+    )
 ) : ViewModel() {
 
     private val workoutEngine = WorkoutEngine(viewModelScope)
@@ -152,6 +157,8 @@ class WorkoutViewModel(
 
         val workout = workoutDefinition ?: WorkoutRepository.getDemoWorkout()
         workoutEngine.loadWorkout(workout)
+
+        startCheckpointLoop(workout)
 
         // Speed/distance go into the .fit file for Strava; the live UI doesn't show them.
         viewModelScope.launch {
@@ -383,6 +390,7 @@ class WorkoutViewModel(
                     dataPointsJson = json
                 )
                 val newId = WorkItOutApplication.rideRepository.saveRide(entity)
+                checkpointStore.clear()
                 _savedRideId.value = newId
                 Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
 
@@ -491,6 +499,45 @@ class WorkoutViewModel(
                 delay(1_500L)
             } finally {
                 _ergRearming.value = false
+            }
+        }
+    }
+
+    private fun startCheckpointLoop(workout: WorkoutDefinition) {
+        val plannedSeconds = workout.intervals.sumOf { it.durationSeconds }
+        viewModelScope.launch {
+            while (true) {
+                delay(10_000L)
+                val state = workoutEngine.progress.value.workoutState
+                if (state != WorkoutState.RUNNING && state != WorkoutState.PAUSED) continue
+                val records = workoutEngine.recordedData.value
+                if (records.isEmpty()) continue
+                val ftp = WorkItOutApplication.userProfileRepository.profile.value.ftpWatts
+                val compactPoints = records
+                    .groupBy { it.timeSeconds }
+                    .entries.sortedBy { it.key }
+                    .map { (second, group) ->
+                        CompactDataPoint(
+                            t = second,
+                            p = group.map { it.actualPower }.average().roundToInt(),
+                            tp = group.last().targetPower,
+                            hr = group.map { it.heartRate }.average().roundToInt(),
+                            c = group.map { it.cadence }.average().roundToInt()
+                        )
+                    }
+                val json = Json.encodeToString(compactPoints)
+                checkpointStore.save(
+                    ActiveWorkoutEntity(
+                        workoutDefinitionId = workout.id,
+                        workoutName = workout.name,
+                        startedAtMillis = workoutEngine.workoutStartEpochMillis,
+                        plannedDurationSeconds = plannedSeconds,
+                        ftpWatts = ftp,
+                        dataPointsJson = json,
+                        lastCheckpointAtMillis = System.currentTimeMillis()
+                    )
+                )
+                Timber.tag("CHECKPOINT").d("Saved checkpoint: ${records.size} data points")
             }
         }
     }

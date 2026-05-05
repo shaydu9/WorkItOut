@@ -73,6 +73,7 @@ import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.ui.components.DevicePairingDialog
+import com.cycling.workitout.ui.components.WorkoutRecoveryDialog
 import com.cycling.workitout.ui.components.rememberBlePermissionState
 import com.cycling.workitout.ui.library.WattsPercentToggle
 import com.cycling.workitout.ui.library.formatTarget
@@ -180,6 +181,14 @@ fun HomeScreen(
                     pairingDialogDeviceType = null
                 }
             )
+
+            state.recoveryCheckpoint?.let { checkpoint ->
+                WorkoutRecoveryDialog(
+                    checkpoint = checkpoint,
+                    onSave = viewModel::saveRecoverRide,
+                    onDiscard = viewModel::dismissRecovery
+                )
+            }
         }
     }
 }
