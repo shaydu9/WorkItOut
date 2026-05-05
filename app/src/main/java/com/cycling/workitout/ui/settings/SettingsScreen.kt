@@ -68,6 +68,7 @@ fun SettingsScreen(
             onSetThemeMode = viewModel::setThemeMode,
             onConnectStrava = { viewModel.connectStrava(context) },
             onDisconnectStrava = viewModel::disconnectStrava,
+            onDismissStravaError = viewModel::dismissStravaConnectError,
             onSetAutoUploadToStrava = viewModel::setAutoUploadToStravaOnFinish,
             onSignOut = viewModel::signOut,
             onUploadPhoto = viewModel::uploadProfilePhoto,
@@ -92,6 +93,7 @@ private fun SettingsScreenContent(
     onSetThemeMode: (ThemeMode) -> Unit,
     onConnectStrava: () -> Unit,
     onDisconnectStrava: () -> Unit,
+    onDismissStravaError: () -> Unit,
     onSetAutoUploadToStrava: (Boolean) -> Unit,
     onSignOut: () -> Unit,
     onUploadPhoto: (android.content.Context, android.net.Uri) -> Unit,
@@ -207,6 +209,31 @@ private fun SettingsScreenContent(
                             Row(verticalAlignment = Alignment.Top) {
                                 Text("•", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
                                 Text(bullet, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        state.stravaConnectError?.let { msg ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        msg,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    TextButton(
+                                        onClick = onDismissStravaError,
+                                        modifier = Modifier.align(Alignment.End)
+                                    ) { Text("Dismiss") }
+                                }
                             }
                         }
                         Box(

@@ -29,7 +29,7 @@ class SettingsViewModel(
     private val userProfileRepository: UserProfileRepository = WorkItOutApplication.userProfileRepository
 ) : ViewModel() {
 
-    val uiState: StateFlow<SettingsUiState> = combine(
+    private val baseState: kotlinx.coroutines.flow.Flow<SettingsUiState> = combine(
         combine(
             themePreferences.themeMode,
             themePreferences.powerSmoothingSeconds,
@@ -55,6 +55,13 @@ class SettingsViewModel(
             autoUploadToStravaOnFinish = autoUpload,
             currentUser = user
         )
+    }
+
+    val uiState: StateFlow<SettingsUiState> = combine(
+        baseState,
+        stravaRepository.connectError
+    ) { state, connectError ->
+        state.copy(stravaConnectError = connectError)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
     //Actions
@@ -70,6 +77,10 @@ class SettingsViewModel(
 
     fun disconnectStrava() {
         stravaRepository.disconnect()
+    }
+
+    fun dismissStravaConnectError() {
+        stravaRepository.clearConnectError()
     }
 
     fun setThemeMode(mode: ThemeMode) {

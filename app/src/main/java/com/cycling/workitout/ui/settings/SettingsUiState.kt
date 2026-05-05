@@ -12,6 +12,7 @@ data class SettingsUiState(
     val maxHeartRate: Int = ThemePreferences.DEFAULT_MAX_HR,
     val stravaConnected: Boolean = false,
     val stravaAthleteName: String? = null,
+    val stravaConnectError: String? = null,
     val autoUploadToStravaOnFinish: Boolean = false,
     val currentUser: AuthUser? = null,
     val photoUrl: String? = null

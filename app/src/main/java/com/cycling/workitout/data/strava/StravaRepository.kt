@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +30,12 @@ class StravaRepository(context: Context) {
     private val _athleteName = MutableStateFlow(tokens.athleteName)
     val athleteName: StateFlow<String?> = _athleteName.asStateFlow()
 
+    // Surfaces the most recent Strava connect failure to the UI; null when there's nothing to show.
+    private val _connectError = MutableStateFlow<String?>(null)
+    val connectError: StateFlow<String?> = _connectError.asStateFlow()
+
+    fun clearConnectError() { _connectError.value = null }
+
     sealed class UploadState {
         object Idle : UploadState()
         object Uploading : UploadState()
@@ -42,6 +49,7 @@ class StravaRepository(context: Context) {
 
     /** Open the Strava authorize page in a Custom Tab. */
     fun beginConnect(context: Context) {
+        _connectError.value = null
         val intent = CustomTabsIntent.Builder()
             .setShowTitle(true)
             .build()
@@ -55,24 +63,36 @@ class StravaRepository(context: Context) {
      * deep link. Exchanges the `code` for tokens and flips [isConnected] on.
      */
     fun handleAuthCallback(uri: Uri) {
+        Timber.tag("STRAVA").i("Strava callback URI: $uri")
         val code = uri.getQueryParameter("code")
         val error = uri.getQueryParameter("error")
+        val scope0 = uri.getQueryParameter("scope")
         if (!error.isNullOrBlank()) {
             Timber.tag("STRAVA").w("Strava auth cancelled/denied: $error")
+            _connectError.value = "Strava auth declined: $error"
+            FirebaseCrashlytics.getInstance().log("Strava auth declined: $error")
             return
         }
         if (code.isNullOrBlank()) {
             Timber.tag("STRAVA").w("Strava callback missing code: $uri")
+            _connectError.value = "Strava redirect missing auth code"
+            FirebaseCrashlytics.getInstance().log("Strava callback missing code, uri=$uri")
             return
         }
+        Timber.tag("STRAVA").i("Strava callback got code (len=${code.length}), scope=$scope0")
         scope.launch {
             try {
                 client.exchangeCode(code)
                 _isConnected.value = true
                 _athleteName.value = tokens.athleteName
+                _connectError.value = null
                 Timber.tag("STRAVA").i("Strava connected as ${tokens.athleteName}")
             } catch (t: Throwable) {
                 Timber.tag("STRAVA").e(t, "Strava code exchange failed")
+                _connectError.value = "Strava code exchange failed: ${t.message ?: t.javaClass.simpleName}"
+                FirebaseCrashlytics.getInstance().recordException(
+                    RuntimeException("Strava code exchange failed", t)
+                )
             }
         }
     }
