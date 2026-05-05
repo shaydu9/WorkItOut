@@ -14,7 +14,7 @@ val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) load(f.inputStream())
 }
-val stravaClientId: String = localProperties.getProperty("STRAVA_CLIENT_ID", "")
+val stravaClientId: String = "225634" // public client ID — not a secret
 val keystorePath: String = localProperties.getProperty("KEYSTORE_PATH", "")
 val keystorePassword: String = localProperties.getProperty("KEYSTORE_PASSWORD", "")
 val signingKeyAlias: String = localProperties.getProperty("KEY_ALIAS", "")
