@@ -137,6 +137,10 @@ private fun WorkoutScreenContent(
     val isFreeRide = workoutIntervals.isEmpty() && progress.totalDurationSeconds == 0
 
     if (isTablet) {
+        val density = LocalDensity.current
+        CompositionLocalProvider(
+            LocalDensity provides Density(density.density, fontScale = 1f)
+        ) {
         Row(modifier = modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
@@ -211,7 +215,12 @@ private fun WorkoutScreenContent(
                 }
             }
         }
+        } // end CompositionLocalProvider
     } else {
+        val density = LocalDensity.current
+        CompositionLocalProvider(
+            LocalDensity provides Density(density.density, fontScale = 1f)
+        ) {
         Column(modifier = modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
@@ -292,6 +301,7 @@ private fun WorkoutScreenContent(
                 }
             }
         }
+        } // end CompositionLocalProvider
     }
 
     StartupOverlay(state = startupState)
