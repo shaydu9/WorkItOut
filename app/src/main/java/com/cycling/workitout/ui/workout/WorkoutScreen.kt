@@ -15,7 +15,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -327,12 +329,18 @@ private fun StartupOverlay(
 ) {
     if (state is WorkoutViewModel.StartupState.Idle) return
 
+    val density = LocalDensity.current
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.82f)),
         contentAlignment = Alignment.Center
     ) {
+        // Pin fontScale=1f so overlay text sizes are always as designed,
+        // regardless of OS accessibility font scale setting.
+        CompositionLocalProvider(
+            LocalDensity provides Density(density.density, fontScale = 1f)
+        ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -375,6 +383,7 @@ private fun StartupOverlay(
                 WorkoutViewModel.StartupState.Idle -> Unit
             }
         }
+        } // end CompositionLocalProvider
     }
 }
 
