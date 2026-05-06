@@ -573,7 +573,7 @@ private fun StatCell(
 @Composable
 private fun ControlPill(
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
+    content: @Composable RowScope.() -> Unit
 ) {
     Surface(
         modifier = modifier,
@@ -583,7 +583,8 @@ private fun ControlPill(
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) { content() }
     }
 }
@@ -608,30 +609,34 @@ private fun BottomControlsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         ControlPill(modifier = Modifier.weight(1f)) {
-            FilledTonalIconButton(
-                onClick = { onIntensityDelta(-step) },
-                enabled = canDec,
-                modifier = Modifier.size(32.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
-            }
-            Text(
-                text = "$intensityPercent%",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp),
-                textAlign = TextAlign.Center,
-                maxLines = 1
-            )
-            FilledTonalIconButton(
-                onClick = { onIntensityDelta(step) },
-                enabled = canInc,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Increase intensity")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalIconButton(
+                        onClick = { onIntensityDelta(-step) },
+                        enabled = canDec,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease intensity", modifier = Modifier.size(14.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    FilledTonalIconButton(
+                        onClick = { onIntensityDelta(step) },
+                        enabled = canInc,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase intensity", modifier = Modifier.size(14.dp))
+                    }
+                }
+                Text(
+                    text = "$intensityPercent%",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1
+                )
             }
         }
         ControlPill(modifier = Modifier.weight(1f)) {
