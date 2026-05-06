@@ -264,18 +264,21 @@ private fun FirstRunPairingScreenContent(
 
 @Composable
 private fun StepIndicator(currentStep: PairingStep) {
+    data class StepEntry(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String, val step: PairingStep)
     val steps = listOf(
-        Icons.Default.FitnessCenter to "Trainer" to PairingStep.TRAINER,
-        Icons.Default.Cached to "Cadence" to PairingStep.CADENCE,
-        Icons.Default.FavoriteBorder to "HR" to PairingStep.HEART_RATE,
-        Icons.Default.Person to "You" to PairingStep.PROFILE,
-        Icons.Default.Check to "Done" to PairingStep.READY
+        StepEntry(Icons.Default.FitnessCenter, "Trainer", PairingStep.TRAINER),
+        StepEntry(Icons.Default.Cached, "Cadence", PairingStep.CADENCE),
+        StepEntry(Icons.Default.FavoriteBorder, "HR", PairingStep.HEART_RATE),
+        StepEntry(Icons.Default.Person, "You", PairingStep.PROFILE),
+        StepEntry(Icons.Default.Check, "Done", PairingStep.READY)
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        steps.forEachIndexed { idx, ((icon, label), s) ->
+        steps.forEachIndexed { idx, entry ->
+            val icon = entry.icon
+            val label = entry.label
             val active = currentStep.ordinal >= idx
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Surface(
