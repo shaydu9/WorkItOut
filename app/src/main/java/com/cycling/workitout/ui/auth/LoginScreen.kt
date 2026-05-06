@@ -182,6 +182,7 @@ private fun LoginScreenContent(
         }
 
         // Sticky bottom action buttons — always reachable
+        HorizontalDivider()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

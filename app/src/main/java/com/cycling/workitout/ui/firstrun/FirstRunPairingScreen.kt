@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -212,8 +213,14 @@ private fun FirstRunPairingScreenContent(
                 Spacer(Modifier.height(16.dp))
             }
 
-            // Sticky bottom buttons — always reachable regardless of font size
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            // Sticky bottom bar — always reachable regardless of font size
+            HorizontalDivider()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 when (step) {
                     PairingStep.TRAINER, PairingStep.CADENCE, PairingStep.HEART_RATE -> {
                         if (connected) {
@@ -221,6 +228,14 @@ private fun FirstRunPairingScreenContent(
                                 Text("Continue")
                             }
                         } else {
+                            Button(
+                                onClick = { if (isScanning) onStopScan() else onScan() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Bluetooth, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (isScanning) "Stop scan" else "Scan for devices")
+                            }
                             TextButton(onClick = onNextStep, modifier = Modifier.fillMaxWidth()) {
                                 Text("Skip for now")
                             }
@@ -284,7 +299,7 @@ private fun StepIndicator(currentStep: PairingStep) {
     }
 }
 
-// Body-only composable — no navigation buttons (they live in the sticky bar below)
+// Body-only: informational content + device list. Action buttons live in the sticky bar.
 @Composable
 private fun PairingStepBody(
     title: String,
@@ -310,24 +325,14 @@ private fun PairingStepBody(
             Text("Connected", fontWeight = FontWeight.Medium)
         }
     } else {
-        Button(
-            onClick = { if (isScanning) onStopScan() else onScan() },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.Bluetooth, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (isScanning) "Stop scan" else "Scan for devices")
-        }
         if (permissionDenied) {
-            Spacer(Modifier.height(8.dp))
             Text(
                 "Bluetooth permission is required to scan for sensors. Grant it in Settings → Apps → WorkItOut → Permissions, then tap Scan again.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(16.dp))
-
         val filtered = devices.filter { it.deviceType == deviceTypeFilter }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             filtered.forEach { device ->
