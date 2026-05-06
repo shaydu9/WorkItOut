@@ -640,25 +640,19 @@ private fun DeviceStatusPill(
         onClick = onClick,
         modifier = modifier
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        // Icon-only: color (purple/red) + icon (barbell/sync/heart) convey state without text
+        // that breaks at large OS font sizes inside a narrow fixed-width pill.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon,
-                contentDescription = null,
+                contentDescription = "$label — ${if (connected) "connected" else "not connected"}",
                 tint = fg,
                 modifier = Modifier.size(28.dp)
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                label,
-                color = fg,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
             )
         }
     }
