@@ -82,170 +82,167 @@ private fun LoginScreenContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    )
-    {
-        Text(
-            text = if (state.mode == LoginUiState.Mode.SignIn)
-                "Welcome Back" else "Create Account",
-            style = MaterialTheme.typography.headlineLarge
-        )
+            .imePadding(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Scrollable fields section
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(top = 48.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = if (state.mode == LoginUiState.Mode.SignIn)
+                    "Welcome Back" else "Create Account",
+                style = MaterialTheme.typography.headlineLarge
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-//            Email
-        OutlinedTextField(
-            value = state.email,
-            onValueChange = onEmailChange,
-            label = { Text("Email") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Email,
-                imeAction = ImeAction.Next
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        val toggleIcon =
-            if (state.showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
-        val toggleDescription = if (state.showPassword) "Hide password" else "Show password"
-
-//            Password
-        OutlinedTextField(
-            value = state.password,
-            onValueChange = onPasswordChange,
-            label = { Text("Password") },
-            singleLine = true,
-            visualTransformation = if (state.showPassword) {
-                VisualTransformation.None
-            } else {
-                PasswordVisualTransformation()
-            },
-            trailingIcon = {
-                IconButton(
-                    onClick = onToggleShowPassword
-                ) {
-                    Icon(
-                        imageVector = toggleIcon,
-                        contentDescription = toggleDescription
-                    )
-                }
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-//            Display name
-        if (state.mode == LoginUiState.Mode.SignUp) {
             OutlinedTextField(
-                value = state.displayName,
-                onValueChange = onDisplayNameChange,
-                label = { Text("Display name (optional)") },
+                value = state.email,
+                onValueChange = onEmailChange,
+                label = { Text("Email") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            val toggleIcon =
+                if (state.showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
+            val toggleDescription = if (state.showPassword) "Hide password" else "Show password"
+
+            OutlinedTextField(
+                value = state.password,
+                onValueChange = onPasswordChange,
+                label = { Text("Password") },
+                singleLine = true,
+                visualTransformation = if (state.showPassword) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(onClick = onToggleShowPassword) {
+                        Icon(imageVector = toggleIcon, contentDescription = toggleDescription)
+                    }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            if (state.mode == LoginUiState.Mode.SignUp) {
+                OutlinedTextField(
+                    value = state.displayName,
+                    onValueChange = onDisplayNameChange,
+                    label = { Text("Display name (optional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-        state.errorMessage?.let { message ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.errorContainer,
-                shape = MaterialTheme.shapes.small
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-
+            state.errorMessage?.let { message ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Error,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Error,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
         }
 
-        Button(
-            onClick = onSubmit,
-            enabled = state.canSubmit,
-            modifier = Modifier.fillMaxWidth()
+        // Sticky bottom action buttons — always reachable
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (state.isSubmitting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            } else {
-                Text(
-                    text = if (state.mode == LoginUiState.Mode.SignIn) "Sign In" else "Create Account"
-                )
-            }
-        }
-
-        TextButton(
-            onClick = onToggleMode,
-        ) {
-            Text(
-                text = if (state.mode == LoginUiState.Mode.SignIn) {
-                    "Don't have an account? Sign up"
+            Button(
+                onClick = onSubmit,
+                enabled = state.canSubmit,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (state.isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 } else {
-                    "Already have an account? Sign in"
+                    Text(if (state.mode == LoginUiState.Mode.SignIn) "Sign In" else "Create Account")
                 }
-            )
-        }
+            }
 
-        Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onToggleMode, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (state.mode == LoginUiState.Mode.SignIn)
+                        "Don't have an account? Sign up"
+                    else
+                        "Already have an account? Sign in"
+                )
+            }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            HorizontalDivider(Modifier.weight(1f))
-            Text(
-                text = "or",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            HorizontalDivider(Modifier.weight(1f))
-        }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                HorizontalDivider(Modifier.weight(1f))
+                Text(
+                    text = "or",
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider(Modifier.weight(1f))
+            }
 
-        OutlinedButton(
-            onClick = onGoogleSignIn,
-            enabled = !state.isSubmitting,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Sign in with Google")
-        }
-        Spacer(Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = onGoogleSignIn,
+                enabled = !state.isSubmitting,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sign in with Google")
+            }
 
-        TextButton(
-            onClick = onContinueAnonymously,
-            enabled = !state.isSubmitting,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Continue without signing in")
+            TextButton(
+                onClick = onContinueAnonymously,
+                enabled = !state.isSubmitting,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Continue without signing in")
+            }
         }
     }
 }

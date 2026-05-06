@@ -225,112 +225,116 @@ private fun HomeScreenContent(
     ) {
     Column(
         modifier = (if (isTablet) Modifier.widthIn(max = 640.dp) else Modifier)
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .fillMaxSize()
     ) {
-        ConnectionStatusChip(
-            trainerConnected = trainerConnected,
-            cadenceConnected = cadenceConnected,
-            hrConnected = hrConnected,
-            onTrainerTap = onTrainerTap,
-            onCadenceTap = onCadenceTap,
-            onHrTap = onHrTap
-        )
-
-        Text("FTP: ${ftp}W", style = MaterialTheme.typography.labelLarge)
-
-        Text(
-            "Duration",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            DURATION_OPTIONS.forEach { mins ->
-                FilterChip(
-                    selected = state.durationMinutes == mins,
-                    onClick = { onSetDuration(mins) },
-                    label = { Text("${mins}m") }
-                )
-            }
-        }
-
-        Text(
-            "Difficulty",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Difficulty.values().forEach { diff ->
-                FilterChip(
-                    selected = state.difficulty == diff,
-                    onClick = { onSetDifficulty(diff) },
-                    label = { Text(diff.label) }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        OutlinedButton(
-            onClick = onOpenCustomPrompt,
-            enabled = !state.isGenerating,
+        // Scrollable content
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Describe your own workout", fontWeight = FontWeight.Medium)
-        }
+            ConnectionStatusChip(
+                trainerConnected = trainerConnected,
+                cadenceConnected = cadenceConnected,
+                hrConnected = hrConnected,
+                onTrainerTap = onTrainerTap,
+                onCadenceTap = onCadenceTap,
+                onHrTap = onHrTap
+            )
 
-        OutlinedButton(
-            onClick = {
-                onStartWorkout(
-                    WorkoutDefinition(
-                        id = "free-ride",
-                        name = "Free Ride",
-                        description = "",
-                        intervals = emptyList(),
-                        totalDurationSeconds = 0,
-                        isFreeRide = true
+            Text("FTP: ${ftp}W", style = MaterialTheme.typography.labelLarge)
+
+            Text(
+                "Duration",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                DURATION_OPTIONS.forEach { mins ->
+                    FilterChip(
+                        selected = state.durationMinutes == mins,
+                        onClick = { onSetDuration(mins) },
+                        label = { Text("${mins}m") }
                     )
-                )
-            },
-            enabled = !state.isGenerating,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Free ride", fontWeight = FontWeight.Medium)
+                }
+            }
+
+            Text(
+                "Difficulty",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Difficulty.values().forEach { diff ->
+                    FilterChip(
+                        selected = state.difficulty == diff,
+                        onClick = { onSetDifficulty(diff) },
+                        label = { Text(diff.label) }
+                    )
+                }
+            }
         }
 
-        Button(
-            onClick = onGenerateWorkout,
-            enabled = !state.isGenerating,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
+        // Sticky bottom action buttons — always reachable
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (state.isGenerating) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-                Spacer(Modifier.width(12.dp))
-                Text("Designing your workout…")
-            } else {
-                Text("Generate Workout", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            OutlinedButton(
+                onClick = onOpenCustomPrompt,
+                enabled = !state.isGenerating,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Describe your own workout", fontWeight = FontWeight.Medium)
+            }
+
+            OutlinedButton(
+                onClick = {
+                    onStartWorkout(
+                        WorkoutDefinition(
+                            id = "free-ride",
+                            name = "Free Ride",
+                            description = "",
+                            intervals = emptyList(),
+                            totalDurationSeconds = 0,
+                            isFreeRide = true
+                        )
+                    )
+                },
+                enabled = !state.isGenerating,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Free ride", fontWeight = FontWeight.Medium)
+            }
+
+            Button(
+                onClick = onGenerateWorkout,
+                enabled = !state.isGenerating,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (state.isGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text("Designing your workout…")
+                } else {
+                    Text("Generate Workout", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }

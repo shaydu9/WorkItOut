@@ -10,14 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Cached
@@ -73,27 +73,18 @@ fun FirstRunPairingScreen(
     var permissionDenied by remember { mutableStateOf(false) }
     val runWithBlePermissions = rememberBlePermissionState(onDenied = { permissionDenied = true })
 
-    // Auto-advance when the currently-pairing device connects.
     LaunchedEffect(trainerConnected, step) {
-        if (step == PairingStep.TRAINER && trainerConnected) {
-            viewModel.stopScan()
-        }
+        if (step == PairingStep.TRAINER && trainerConnected) viewModel.stopScan()
     }
     LaunchedEffect(cadenceSensorConnected, step) {
-        if (step == PairingStep.CADENCE && cadenceSensorConnected) {
-            viewModel.stopScan()
-        }
+        if (step == PairingStep.CADENCE && cadenceSensorConnected) viewModel.stopScan()
     }
     LaunchedEffect(hrConnected, step) {
-        if (step == PairingStep.HEART_RATE && hrConnected) {
-            viewModel.stopScan()
-        }
+        if (step == PairingStep.HEART_RATE && hrConnected) viewModel.stopScan()
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Get Started") })
-        }
+        topBar = { TopAppBar(title = { Text("Get Started") }) }
     ) { padding ->
         FirstRunPairingScreenContent(
             step = step,
@@ -142,81 +133,117 @@ private fun FirstRunPairingScreenContent(
     modifier: Modifier = Modifier
 ) {
     val isTablet = LocalConfiguration.current.screenWidthDp >= 600
+    val connected = when (step) {
+        PairingStep.TRAINER -> trainerConnected
+        PairingStep.CADENCE -> cadenceSensorConnected
+        PairingStep.HEART_RATE -> hrConnected
+        else -> false
+    }
+    val profileValid = ftp in 50..600 && weightKg in 30..200 && maxHeartRate in 120..230
 
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
     ) {
-    Column(
-        modifier = (if (isTablet) Modifier.widthIn(max = 560.dp) else Modifier)
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .imePadding()
-            .padding(16.dp)
-    ) {
-        StepIndicator(currentStep = step)
-        Spacer(Modifier.height(24.dp))
+        Column(
+            modifier = (if (isTablet) Modifier.widthIn(max = 560.dp) else Modifier)
+                .fillMaxSize()
+                .imePadding()
+        ) {
+            // Step indicator — always visible above the scroll
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
+                StepIndicator(currentStep = step)
+            }
 
-        when (step) {
-            PairingStep.TRAINER -> PairingStepContent(
-                title = "Pair your Smart Trainer",
-                subtitle = "We'll use the trainer for power, cadence and ERG control. You can skip this if you don't have one yet.",
-                connected = trainerConnected,
-                deviceTypeFilter = DeviceType.SMART_TRAINER,
-                devices = devices,
-                isScanning = isScanning,
-                permissionDenied = permissionDenied,
-                onScan = onScan,
-                onStopScan = onStopScan,
-                onDeviceClick = onDeviceClick,
-                onNext = onNextStep,
-                allowSkip = true
-            )
+            // Scrollable body
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+            ) {
+                when (step) {
+                    PairingStep.TRAINER -> PairingStepBody(
+                        title = "Pair your Smart Trainer",
+                        subtitle = "We'll use the trainer for power, cadence and ERG control. You can skip this if you don't have one yet.",
+                        connected = trainerConnected,
+                        deviceTypeFilter = DeviceType.SMART_TRAINER,
+                        devices = devices,
+                        isScanning = isScanning,
+                        permissionDenied = permissionDenied,
+                        onScan = onScan,
+                        onStopScan = onStopScan,
+                        onDeviceClick = onDeviceClick
+                    )
+                    PairingStep.CADENCE -> PairingStepBody(
+                        title = "Pair a Cadence Sensor",
+                        subtitle = "Your trainer doesn't seem to broadcast cadence. Pair a separate BLE cadence sensor for accurate RPM, or skip and we'll go without.",
+                        connected = cadenceSensorConnected,
+                        deviceTypeFilter = DeviceType.CADENCE_SENSOR,
+                        devices = devices,
+                        isScanning = isScanning,
+                        permissionDenied = permissionDenied,
+                        onScan = onScan,
+                        onStopScan = onStopScan,
+                        onDeviceClick = onDeviceClick
+                    )
+                    PairingStep.HEART_RATE -> PairingStepBody(
+                        title = "Pair your Heart Rate Monitor",
+                        subtitle = "Optional, but recommended for accurate training.",
+                        connected = hrConnected,
+                        deviceTypeFilter = DeviceType.HEART_RATE_MONITOR,
+                        devices = devices,
+                        isScanning = isScanning,
+                        permissionDenied = permissionDenied,
+                        onScan = onScan,
+                        onStopScan = onStopScan,
+                        onDeviceClick = onDeviceClick
+                    )
+                    PairingStep.PROFILE -> ProfileStepBody(
+                        ftp = ftp,
+                        weightKg = weightKg,
+                        maxHeartRate = maxHeartRate,
+                        onFtpChange = onFtpChange,
+                        onWeightChange = onWeightChange,
+                        onMaxHrChange = onMaxHrChange
+                    )
+                    PairingStep.READY -> ReadyStepBody()
+                }
+                Spacer(Modifier.height(16.dp))
+            }
 
-            PairingStep.CADENCE -> PairingStepContent(
-                title = "Pair a Cadence Sensor",
-                subtitle = "Your trainer doesn't seem to broadcast cadence. Pair a separate BLE cadence sensor for accurate RPM, or skip and we'll go without.",
-                connected = cadenceSensorConnected,
-                deviceTypeFilter = DeviceType.CADENCE_SENSOR,
-                devices = devices,
-                isScanning = isScanning,
-                permissionDenied = permissionDenied,
-                onScan = onScan,
-                onStopScan = onStopScan,
-                onDeviceClick = onDeviceClick,
-                onNext = onNextStep,
-                allowSkip = true
-            )
-
-            PairingStep.HEART_RATE -> PairingStepContent(
-                title = "Pair your Heart Rate Monitor",
-                subtitle = "Optional, but recommended for accurate training.",
-                connected = hrConnected,
-                deviceTypeFilter = DeviceType.HEART_RATE_MONITOR,
-                devices = devices,
-                isScanning = isScanning,
-                permissionDenied = permissionDenied,
-                onScan = onScan,
-                onStopScan = onStopScan,
-                onDeviceClick = onDeviceClick,
-                onNext = onNextStep,
-                allowSkip = true
-            )
-
-            PairingStep.PROFILE -> ProfileStepContent(
-                ftp = ftp,
-                weightKg = weightKg,
-                maxHeartRate = maxHeartRate,
-                onFtpChange = onFtpChange,
-                onWeightChange = onWeightChange,
-                onMaxHrChange = onMaxHrChange,
-                onNext = onNextStep
-            )
-
-            PairingStep.READY -> ReadyStepContent(onFinish = onFinish)
+            // Sticky bottom buttons — always reachable regardless of font size
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                when (step) {
+                    PairingStep.TRAINER, PairingStep.CADENCE, PairingStep.HEART_RATE -> {
+                        if (connected) {
+                            Button(onClick = onNextStep, modifier = Modifier.fillMaxWidth()) {
+                                Text("Continue")
+                            }
+                        } else {
+                            TextButton(onClick = onNextStep, modifier = Modifier.fillMaxWidth()) {
+                                Text("Skip for now")
+                            }
+                        }
+                    }
+                    PairingStep.PROFILE -> {
+                        Button(
+                            onClick = onNextStep,
+                            enabled = profileValid,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Continue")
+                        }
+                    }
+                    PairingStep.READY -> {
+                        Button(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
+                            Text("Let's go")
+                        }
+                    }
+                }
+            }
         }
     }
-    } // end Box
 }
 
 @Composable
@@ -243,7 +270,11 @@ private fun StepIndicator(currentStep: PairingStep) {
                         modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("${idx + 1}", color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "${idx + 1}",
+                            color = if (active) MaterialTheme.colorScheme.onPrimary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -253,8 +284,9 @@ private fun StepIndicator(currentStep: PairingStep) {
     }
 }
 
+// Body-only composable — no navigation buttons (they live in the sticky bar below)
 @Composable
-private fun PairingStepContent(
+private fun PairingStepBody(
     title: String,
     subtitle: String,
     connected: Boolean,
@@ -264,9 +296,7 @@ private fun PairingStepContent(
     permissionDenied: Boolean,
     onScan: () -> Unit,
     onStopScan: () -> Unit,
-    onDeviceClick: (BleDevice) -> Unit,
-    onNext: () -> Unit,
-    allowSkip: Boolean = false
+    onDeviceClick: (BleDevice) -> Unit
 ) {
     Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(4.dp))
@@ -278,10 +308,6 @@ private fun PairingStepContent(
             Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(8.dp))
             Text("Connected", fontWeight = FontWeight.Medium)
-        }
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-            Text("Continue")
         }
     } else {
         Button(
@@ -306,13 +332,6 @@ private fun PairingStepContent(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             filtered.forEach { device ->
                 DeviceRow(device = device, onClick = { onDeviceClick(device) })
-            }
-        }
-
-        if (allowSkip) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                Text("Skip for now")
             }
         }
     }
@@ -346,15 +365,15 @@ private fun DeviceRow(device: BleDevice, onClick: () -> Unit) {
     }
 }
 
+// Body-only — no Continue button
 @Composable
-private fun ProfileStepContent(
+private fun ProfileStepBody(
     ftp: Int,
     weightKg: Int,
     maxHeartRate: Int,
     onFtpChange: (Int) -> Unit,
     onWeightChange: (Int) -> Unit,
-    onMaxHrChange: (Int) -> Unit,
-    onNext: () -> Unit
+    onMaxHrChange: (Int) -> Unit
 ) {
     Text("Tell us about you", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(4.dp))
@@ -365,35 +384,11 @@ private fun ProfileStepContent(
     )
     Spacer(Modifier.height(24.dp))
 
-    NumericField(
-        value = ftp,
-        label = "FTP (watts)",
-        onChange = onFtpChange,
-        maxDigits = 3
-    )
+    NumericField(value = ftp, label = "FTP (watts)", onChange = onFtpChange, maxDigits = 3)
     Spacer(Modifier.height(12.dp))
-    NumericField(
-        value = weightKg,
-        label = "Body weight (kg)",
-        onChange = onWeightChange,
-        maxDigits = 3
-    )
+    NumericField(value = weightKg, label = "Body weight (kg)", onChange = onWeightChange, maxDigits = 3)
     Spacer(Modifier.height(12.dp))
-    NumericField(
-        value = maxHeartRate,
-        label = "Max heart rate (bpm)",
-        onChange = onMaxHrChange,
-        maxDigits = 3
-    )
-
-    Spacer(Modifier.height(24.dp))
-    Button(
-        onClick = onNext,
-        enabled = ftp in 50..600 && weightKg in 30..200 && maxHeartRate in 120..230,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("Continue")
-    }
+    NumericField(value = maxHeartRate, label = "Max heart rate (bpm)", onChange = onMaxHrChange, maxDigits = 3)
 }
 
 @Composable
@@ -416,8 +411,9 @@ private fun NumericField(
     )
 }
 
+// Body-only — no "Let's go" button
 @Composable
-private fun ReadyStepContent(onFinish: () -> Unit) {
+private fun ReadyStepBody() {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -436,9 +432,5 @@ private fun ReadyStepContent(onFinish: () -> Unit) {
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
-            Text("Let's go")
-        }
     }
 }
