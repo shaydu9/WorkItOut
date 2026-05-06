@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -144,7 +145,8 @@ private fun WorkoutScreenContent(
                         PowerDataPoint(it.timeSeconds, it.actualPower)
                     },
                     workoutState = progress.workoutState,
-                    workoutName = progress.workoutName
+                    workoutName = progress.workoutName,
+                    ftpWatts = currentFtp
                 )
             }
 
@@ -216,7 +218,8 @@ private fun WorkoutScreenContent(
                         PowerDataPoint(it.timeSeconds, it.actualPower)
                     },
                     workoutState = progress.workoutState,
-                    workoutName = progress.workoutName
+                    workoutName = progress.workoutName,
+                    ftpWatts = currentFtp
                 )
             }
 
@@ -741,7 +744,8 @@ fun WorkoutProgressGraph(
     totalDurationSeconds: Int,
     recordedPowerPoints: List<PowerDataPoint>,
     workoutState: WorkoutState,
-    workoutName: String = ""
+    workoutName: String = "",
+    ftpWatts: Int = 0
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -776,7 +780,8 @@ fun WorkoutProgressGraph(
                 currentTimeSeconds = currentTimeSeconds,
                 totalDurationSeconds = totalDurationSeconds,
                 recordedPowerPoints = recordedPowerPoints,
-                workoutState = workoutState
+                workoutState = workoutState,
+                ftpWatts = ftpWatts
             )
         }
 
@@ -801,12 +806,13 @@ private fun WorkoutBlocksGraph(
     currentTimeSeconds: Int,
     totalDurationSeconds: Int,
     recordedPowerPoints: List<PowerDataPoint>,
-    workoutState: WorkoutState
+    workoutState: WorkoutState,
+    ftpWatts: Int = 0
 ) {
-    // Free ride: no target intervals — draw the actual-power trace alone, scaled to
-    // the rider's observed max with a sensible floor so a slow start doesn't hug the top.
+    // Free ride: no target intervals — draw the actual-power trace alone, with a
+    // fixed 0..1000W y-axis (labels every ftp/2) and color the line by power zone.
     if (intervals.isEmpty() || totalDurationSeconds == 0) {
-        FreeRideTrace(currentTimeSeconds, recordedPowerPoints, workoutState)
+        FreeRideTrace(currentTimeSeconds, recordedPowerPoints, workoutState, ftpWatts)
         return
     }
 
@@ -893,44 +899,111 @@ private fun ZoneLegendItem(color: Color, label: String) {
     }
 }
 
-// Free-ride graph: x-axis = elapsed seconds (auto-extending), y-axis = produced watts
-// scaled to the running peak (with a floor so a low start doesn't squash the trace).
+// Free-ride graph: y-axis fixed 0..1000W with labels every ftp/2, x-axis = elapsed
+// seconds (auto-extending). The trace is colored per-segment by the power zone of
+// each sample so the rider sees zone transitions live.
 @Composable
 private fun FreeRideTrace(
     currentTimeSeconds: Int,
     recordedPowerPoints: List<PowerDataPoint>,
-    workoutState: WorkoutState
+    workoutState: WorkoutState,
+    ftpWatts: Int
 ) {
-    val observedMax = recordedPowerPoints.maxOfOrNull { it.power } ?: 0
-    val maxPower = maxOf(observedMax, 200).toFloat()
+    val maxPower = 1000f
     val totalDuration = maxOf(currentTimeSeconds, 60).toFloat()
+    // Step every ftp/2 so the FTP itself is one of the grid lines (200 → 100W steps).
+    // Fall back to 100W if FTP is unset.
+    val labelStep = (if (ftpWatts > 0) ftpWatts / 2 else 100).coerceAtLeast(50)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.18f)
+    val ftpColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val labelPx = with(density) { 10.sp.toPx() }
+    val leftPad = with(density) { 36.dp.toPx() }
+    val topPad = with(density) { 4.dp.toPx() }
+    val bottomPad = with(density) { 2.dp.toPx() }
 
     androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
         val canvasWidth = size.width
         val canvasHeight = size.height
+        val plotLeft = leftPad
+        val plotRight = canvasWidth
+        val plotTop = topPad
+        val plotBottom = canvasHeight - bottomPad
+        val plotW = plotRight - plotLeft
+        val plotH = plotBottom - plotTop
 
-        if (recordedPowerPoints.size >= 2) {
-            val path = androidx.compose.ui.graphics.Path()
-            var started = false
-            for (point in recordedPowerPoints) {
-                val x = (point.timeSeconds.toFloat() / totalDuration) * canvasWidth
-                val normalizedPower = (point.power.toFloat() / maxPower).coerceIn(0f, 1f)
-                val y = canvasHeight - (normalizedPower * canvasHeight * 0.85f)
-                if (!started) { path.moveTo(x, y); started = true } else { path.lineTo(x, y) }
-            }
-            drawPath(
-                path = path,
-                color = Color(0xFF00BCD4),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+        fun yFor(watts: Int): Float =
+            plotBottom - ((watts.toFloat() / maxPower).coerceIn(0f, 1f) * plotH)
+        fun xFor(seconds: Int): Float =
+            plotLeft + (seconds.toFloat() / totalDuration) * plotW
+
+        // Grid lines + watt labels on the left edge.
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(
+                (labelColor.alpha * 255).toInt(),
+                (labelColor.red * 255).toInt(),
+                (labelColor.green * 255).toInt(),
+                (labelColor.blue * 255).toInt()
             )
+            textSize = labelPx
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.RIGHT
+        }
+        var watts = 0
+        while (watts <= 1000) {
+            val y = yFor(watts)
+            val isFtp = ftpWatts > 0 && watts == ftpWatts
+            drawLine(
+                color = if (isFtp) ftpColor else gridColor,
+                start = androidx.compose.ui.geometry.Offset(plotLeft, y),
+                end = androidx.compose.ui.geometry.Offset(plotRight, y),
+                strokeWidth = if (isFtp) 1.5.dp.toPx() else 1.dp.toPx()
+            )
+            drawContext.canvas.nativeCanvas.drawText(
+                watts.toString(),
+                plotLeft - 4.dp.toPx(),
+                y + labelPx / 3f,
+                paint
+            )
+            watts += labelStep
+        }
+
+        // Zone-colored trace: each segment uses the zone color of its starting sample.
+        if (recordedPowerPoints.size >= 2 && ftpWatts > 0) {
+            val strokePx = 2.dp.toPx()
+            for (i in 1 until recordedPowerPoints.size) {
+                val a = recordedPowerPoints[i - 1]
+                val b = recordedPowerPoints[i]
+                val zone = com.cycling.workitout.data.PowerZone.fromAbsoluteWatts(a.power, ftpWatts)
+                drawLine(
+                    color = Color(zone.colorHex),
+                    start = androidx.compose.ui.geometry.Offset(xFor(a.timeSeconds), yFor(a.power)),
+                    end = androidx.compose.ui.geometry.Offset(xFor(b.timeSeconds), yFor(b.power)),
+                    strokeWidth = strokePx,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            }
+        } else if (recordedPowerPoints.size >= 2) {
+            // No FTP yet — fall back to a single-color trace.
+            for (i in 1 until recordedPowerPoints.size) {
+                val a = recordedPowerPoints[i - 1]
+                val b = recordedPowerPoints[i]
+                drawLine(
+                    color = Color(0xFF00BCD4),
+                    start = androidx.compose.ui.geometry.Offset(xFor(a.timeSeconds), yFor(a.power)),
+                    end = androidx.compose.ui.geometry.Offset(xFor(b.timeSeconds), yFor(b.power)),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
         }
 
         if (workoutState == WorkoutState.RUNNING || workoutState == WorkoutState.PAUSED) {
-            val posX = (currentTimeSeconds.toFloat() / totalDuration) * canvasWidth
+            val posX = xFor(currentTimeSeconds)
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(posX, 0f),
-                end = androidx.compose.ui.geometry.Offset(posX, canvasHeight),
+                start = androidx.compose.ui.geometry.Offset(posX, plotTop),
+                end = androidx.compose.ui.geometry.Offset(posX, plotBottom),
                 strokeWidth = 2.dp.toPx()
             )
         }
