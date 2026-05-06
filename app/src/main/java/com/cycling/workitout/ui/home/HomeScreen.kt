@@ -291,6 +291,29 @@ private fun HomeScreenContent(
             Text("Describe your own workout", fontWeight = FontWeight.Medium)
         }
 
+        OutlinedButton(
+            onClick = {
+                onStartWorkout(
+                    WorkoutDefinition(
+                        id = "free-ride",
+                        name = "Free Ride",
+                        description = "",
+                        intervals = emptyList(),
+                        totalDurationSeconds = 0,
+                        isFreeRide = true
+                    )
+                )
+            },
+            enabled = !state.isGenerating,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Icon(Icons.Default.PlayArrow, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Free ride", fontWeight = FontWeight.Medium)
+        }
+
         Button(
             onClick = onGenerateWorkout,
             enabled = !state.isGenerating,

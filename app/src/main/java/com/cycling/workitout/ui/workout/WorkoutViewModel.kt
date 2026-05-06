@@ -110,9 +110,14 @@ class WorkoutViewModel(
         viewModelScope.launch { themePreferences.setDisplayTargetsAsPercent(asPercent) }
     }
 
+    // True for the lifetime of this VM if loaded with a free-ride workout. Disables ERG
+    // entirely (no FTMS writes, no watchdog, no pre-send) and surfaces a free-ride UI.
+    val isFreeRide: Boolean = workoutDefinition?.isFreeRide == true
+
     // ERG mode toggle — when ON, target power is pushed to the trainer on each interval change.
     // When OFF, the workout timer continues but no FTMS writes happen.
-    private val _ergEnabled = MutableStateFlow(true)
+    // For free ride, force OFF and never auto-arm.
+    private val _ergEnabled = MutableStateFlow(!isFreeRide)
     val ergEnabled: StateFlow<Boolean> = _ergEnabled.asStateFlow()
 
     // True for ~1.5s while the watchdog auto-rearms ERG; UI shows a transient "Re-arming…" hint.
@@ -560,6 +565,7 @@ class WorkoutViewModel(
 
     // When re-enabling ERG, re-acquire control and push the current target immediately.
     fun setErgEnabled(enabled: Boolean) {
+        if (isFreeRide) return
         if (_ergEnabled.value == enabled) return
         _ergEnabled.value = enabled
         viewModelScope.launch {

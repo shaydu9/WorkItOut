@@ -125,6 +125,7 @@ private fun WorkoutScreenContent(
 ) {
     val zoneColor = Color(progress.currentZone.colorHex)
     val isTablet = LocalConfiguration.current.screenWidthDp >= 600
+    val isFreeRide = workoutIntervals.isEmpty() && progress.totalDurationSeconds == 0
 
     if (isTablet) {
         Row(modifier = modifier.fillMaxSize()) {
@@ -182,16 +183,20 @@ private fun WorkoutScreenContent(
                     zoneColor = zoneColor,
                     displayAsPercent = displayAsPercent,
                     currentFtp = currentFtp,
+                    isFreeRide = isFreeRide,
+                    elapsedSeconds = progress.totalElapsedSeconds,
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
                 Spacer(Modifier.height(8.dp))
-                ErgToggleRow(
-                    ergEnabled = ergEnabled,
-                    ergRearming = ergRearming,
-                    onErgChange = onErgChange,
-                    displayAsPercent = displayAsPercent,
-                    onDisplayChange = onDisplayChange
-                )
+                if (!isFreeRide) {
+                    ErgToggleRow(
+                        ergEnabled = ergEnabled,
+                        ergRearming = ergRearming,
+                        onErgChange = onErgChange,
+                        displayAsPercent = displayAsPercent,
+                        onDisplayChange = onDisplayChange
+                    )
+                }
             }
         }
     } else {
@@ -252,6 +257,8 @@ private fun WorkoutScreenContent(
                     zoneColor = zoneColor,
                     displayAsPercent = displayAsPercent,
                     currentFtp = currentFtp,
+                    isFreeRide = isFreeRide,
+                    elapsedSeconds = progress.totalElapsedSeconds,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -259,13 +266,15 @@ private fun WorkoutScreenContent(
 
                 Spacer(Modifier.height(8.dp))
 
-                ErgToggleRow(
-                    ergEnabled = ergEnabled,
-                    ergRearming = ergRearming,
-                    onErgChange = onErgChange,
-                    displayAsPercent = displayAsPercent,
-                    onDisplayChange = onDisplayChange
-                )
+                if (!isFreeRide) {
+                    ErgToggleRow(
+                        ergEnabled = ergEnabled,
+                        ergRearming = ergRearming,
+                        onErgChange = onErgChange,
+                        displayAsPercent = displayAsPercent,
+                        onDisplayChange = onDisplayChange
+                    )
+                }
             }
         }
     }
@@ -366,6 +375,8 @@ private fun StatsGrid(
     zoneColor: Color,
     displayAsPercent: Boolean,
     currentFtp: Int,
+    isFreeRide: Boolean = false,
+    elapsedSeconds: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val percentOf = { watts: Int ->
@@ -402,28 +413,30 @@ private fun StatsGrid(
                 modifier = Modifier.weight(1f)
             )
             StatCell(
-                label = "TARGET",
-                value = targetValueStr,
-                unit = targetUnitStr,
+                label = if (isFreeRide) "ELAPSED" else "TARGET",
+                value = if (isFreeRide) formatTime(elapsedSeconds) else targetValueStr,
+                unit = if (isFreeRide) "" else targetUnitStr,
                 color = zoneColor,
                 modifier = Modifier.weight(1f)
             )
         }
 
-        // Row 2: Interval remaining (full width)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.8f)
-        ) {
-            StatCell(
-                label = "INTERVAL REMAINING",
-                value = formatTime(intervalRemaining),
-                unit = "",
-                color = if (intervalRemaining <= 10) Color(0xFFFF9800)
-                else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth()
-            )
+        // Row 2: Interval remaining (full width). Hidden in free ride — no intervals.
+        if (!isFreeRide) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.8f)
+            ) {
+                StatCell(
+                    label = "INTERVAL REMAINING",
+                    value = formatTime(intervalRemaining),
+                    unit = "",
+                    color = if (intervalRemaining <= 10) Color(0xFFFF9800)
+                    else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         // Row 3: Cadence | HR
@@ -743,7 +756,8 @@ fun WorkoutProgressGraph(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "${formatTime(currentTimeSeconds)} / ${formatTime(totalDurationSeconds)}",
+                text = if (totalDurationSeconds <= 0) formatTime(currentTimeSeconds)
+                else "${formatTime(currentTimeSeconds)} / ${formatTime(totalDurationSeconds)}",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -789,7 +803,12 @@ private fun WorkoutBlocksGraph(
     recordedPowerPoints: List<PowerDataPoint>,
     workoutState: WorkoutState
 ) {
-    if (intervals.isEmpty() || totalDurationSeconds == 0) return
+    // Free ride: no target intervals — draw the actual-power trace alone, scaled to
+    // the rider's observed max with a sensible floor so a slow start doesn't hug the top.
+    if (intervals.isEmpty() || totalDurationSeconds == 0) {
+        FreeRideTrace(currentTimeSeconds, recordedPowerPoints, workoutState)
+        return
+    }
 
     val maxPower = intervals.maxOf { it.targetPower }.toFloat().coerceAtLeast(1f)
 
@@ -871,6 +890,50 @@ private fun ZoneLegendItem(color: Color, label: String) {
             fontSize = 9.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+// Free-ride graph: x-axis = elapsed seconds (auto-extending), y-axis = produced watts
+// scaled to the running peak (with a floor so a low start doesn't squash the trace).
+@Composable
+private fun FreeRideTrace(
+    currentTimeSeconds: Int,
+    recordedPowerPoints: List<PowerDataPoint>,
+    workoutState: WorkoutState
+) {
+    val observedMax = recordedPowerPoints.maxOfOrNull { it.power } ?: 0
+    val maxPower = maxOf(observedMax, 200).toFloat()
+    val totalDuration = maxOf(currentTimeSeconds, 60).toFloat()
+
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+
+        if (recordedPowerPoints.size >= 2) {
+            val path = androidx.compose.ui.graphics.Path()
+            var started = false
+            for (point in recordedPowerPoints) {
+                val x = (point.timeSeconds.toFloat() / totalDuration) * canvasWidth
+                val normalizedPower = (point.power.toFloat() / maxPower).coerceIn(0f, 1f)
+                val y = canvasHeight - (normalizedPower * canvasHeight * 0.85f)
+                if (!started) { path.moveTo(x, y); started = true } else { path.lineTo(x, y) }
+            }
+            drawPath(
+                path = path,
+                color = Color(0xFF00BCD4),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+            )
+        }
+
+        if (workoutState == WorkoutState.RUNNING || workoutState == WorkoutState.PAUSED) {
+            val posX = (currentTimeSeconds.toFloat() / totalDuration) * canvasWidth
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(posX, 0f),
+                end = androidx.compose.ui.geometry.Offset(posX, canvasHeight),
+                strokeWidth = 2.dp.toPx()
+            )
+        }
     }
 }
 

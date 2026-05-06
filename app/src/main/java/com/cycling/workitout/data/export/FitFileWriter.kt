@@ -131,10 +131,48 @@ object FitFileWriter {
                 encoder.write(lap)
             }
 
+            // Free ride: synthesize a single lap from the recorded span so Strava has at
+            // least one lap (otherwise SessionMesg.numLaps=0, which some parsers reject).
+            if (workout.intervals.isEmpty() && sorted.isNotEmpty()) {
+                val lapStartMillis = sorted.first().epochMillis.takeIf { it > 0 } ?: startEpochMillis
+                val lapEndMillis = sorted.last().epochMillis
+                lapEndEpochs += lapEndMillis
+                val lapElapsed = ((lapEndMillis - lapStartMillis) / 1000f).coerceAtLeast(0f)
+
+                val powers = sorted.map { it.actualPower }.filter { it > 0 }
+                val hrs = sorted.map { it.heartRate }.filter { it > 0 }
+                val cads = sorted.map { it.cadence }.filter { it >= 0 }
+                val speeds = sorted.map { it.speedMps }.filter { it > 0f }
+
+                val lap = LapMesg().apply {
+                    messageIndex = 0
+                    startTime = DateTime(Date(lapStartMillis))
+                    timestamp = DateTime(Date(lapEndMillis))
+                    totalElapsedTime = lapElapsed
+                    totalTimerTime = lapElapsed
+                    event = Event.LAP
+                    eventType = EventType.STOP
+                    sport = Sport.CYCLING
+                    subSport = SubSport.VIRTUAL_ACTIVITY
+                    if (powers.isNotEmpty()) { avgPower = powers.average().toInt(); maxPower = powers.max() }
+                    if (hrs.isNotEmpty()) { avgHeartRate = hrs.average().toInt().toShort(); maxHeartRate = hrs.max().toShort() }
+                    if (cads.isNotEmpty()) { avgCadence = cads.average().toInt().toShort(); maxCadence = cads.max().toShort() }
+                    if (speeds.isNotEmpty()) { avgSpeed = speeds.average().toFloat(); maxSpeed = speeds.max() }
+                    totalDistance = sorted.last().distanceMeters
+                }
+                encoder.write(lap)
+            }
+
+            // For free ride (no intervals) the planned duration is 0, so fall back to the
+            // actual recorded span. Otherwise Strava sees a 0-second activity.
+            val recordedEndMillis = sorted.lastOrNull()?.epochMillis
             val endMillis = lapEndEpochs.lastOrNull()
+                ?: recordedEndMillis
                 ?: (startEpochMillis + workout.totalDurationSeconds * 1000L)
             val endTs = DateTime(Date(endMillis))
-            val totalElapsed = workout.totalDurationSeconds.toFloat()
+            val totalElapsed = if (workout.intervals.isEmpty())
+                ((endMillis - startEpochMillis) / 1000f).coerceAtLeast(0f)
+            else workout.totalDurationSeconds.toFloat()
 
             val stopEvent = EventMesg().apply {
                 timestamp = endTs
@@ -161,7 +199,8 @@ object FitFileWriter {
                 event = Event.SESSION
                 eventType = EventType.STOP
                 firstLapIndex = 0
-                numLaps = workout.intervals.size
+                numLaps = if (workout.intervals.isEmpty()) (if (sorted.isNotEmpty()) 1 else 0)
+                    else workout.intervals.size
                 if (allPowers.isNotEmpty()) {
                     avgPower = allPowers.average().toInt()
                     maxPower = allPowers.max()

@@ -86,9 +86,9 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         _recordedData.value = emptyList()
         Timber.tag("WORKOUT").i("▶ Workout start: ${w.name} — ${w.intervals.size} intervals, ${w.totalDurationSeconds / 60}:${"%02d".format(w.totalDurationSeconds % 60)} total")
 
-        val firstInterval = w.intervals.first()
         onWorkoutStarted?.invoke()
-        onTargetPowerChanged?.invoke(firstInterval.targetPowerWatts)
+        // No intervals = free ride: no target to push to the trainer.
+        w.intervals.firstOrNull()?.let { onTargetPowerChanged?.invoke(it.targetPowerWatts) }
 
         updateProgress(0)
         startTicking()
@@ -180,6 +180,17 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
         val w = workout ?: return
 
         val totalElapsed = ((System.currentTimeMillis() - startTimeMillis) / 1000).toInt()
+
+        // Free ride: no intervals, no auto-complete. Just advance elapsed and publish.
+        if (w.intervals.isEmpty()) {
+            if (totalElapsed - lastSummaryAtSecond >= 60) {
+                lastSummaryAtSecond = totalElapsed
+                logMinuteSummary(totalElapsed)
+            }
+            publishSnapshot()
+            updateProgress(totalElapsed)
+            return
+        }
 
         if (totalElapsed >= w.totalDurationSeconds) {
             tickJob?.cancel()
@@ -285,7 +296,25 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
 
     private fun updateProgress(totalElapsed: Int) {
         val w = workout ?: return
-        val interval = w.intervals.getOrNull(currentIntervalIndex) ?: return
+        val interval = w.intervals.getOrNull(currentIntervalIndex)
+        if (interval == null) {
+            // Free ride: emit elapsed-only progress. No target, no remaining.
+            _progress.value = _progress.value.copy(
+                workoutState = _progress.value.workoutState,
+                workoutName = w.name,
+                totalElapsedSeconds = totalElapsed,
+                totalRemainingSeconds = 0,
+                totalDurationSeconds = 0,
+                intervalElapsedSeconds = totalElapsed,
+                intervalRemainingSeconds = 0,
+                intervalDurationSeconds = 0,
+                targetPowerWatts = 0,
+                currentIntervalIndex = 0,
+                totalIntervals = 0,
+                currentIntervalName = ""
+            )
+            return
+        }
 
         var cumulative = 0
         for (i in 0 until currentIntervalIndex) {

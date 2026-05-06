@@ -40,7 +40,10 @@ data class WorkoutDefinition(
     val name: String,
     val description: String,
     val intervals: List<WorkoutIntervalDef>,
-    val totalDurationSeconds: Int = intervals.sumOf { it.durationSeconds }
+    val totalDurationSeconds: Int = intervals.sumOf { it.durationSeconds },
+    // Free ride: no ERG target, no time limit. Rider starts/stops manually; the live
+    // graph just shows produced watts over elapsed time. Intervals must be empty.
+    val isFreeRide: Boolean = false
 )
 
 // Recomputes targetPowerWatts from each interval's canonical %FTP — call at load time so saved workouts track the user's current FTP.
