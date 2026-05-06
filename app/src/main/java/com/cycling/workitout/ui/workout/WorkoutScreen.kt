@@ -779,9 +779,9 @@ private fun ControlBar(
                                 color = Color.White
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("Saving workout…")
+                            Text("Saving…", maxLines = 1)
                         }
-                        exportFailed -> Text("Save failed — cannot upload")
+                        exportFailed -> Text("Save failed", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         isUploading -> {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
@@ -789,7 +789,7 @@ private fun ControlBar(
                                 color = Color.White
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("Uploading to Strava…")
+                            Text("Uploading…", maxLines = 1)
                         }
                         uploadSucceeded -> {
                             Icon(
@@ -798,11 +798,11 @@ private fun ControlBar(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("Uploaded to Strava")
+                            Text("Uploaded!", maxLines = 1)
                         }
-                        uploadFailed -> Text("Upload failed — tap to retry")
-                        !stravaConnected -> Text("Upload to Strava — connect in Settings")
-                        else -> Text("Upload to Strava")
+                        uploadFailed -> Text("Upload failed — retry", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        !stravaConnected -> Text("Connect Strava in Settings", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        else -> Text("Upload to Strava", maxLines = 1)
                     }
                 }
                 Spacer(modifier = Modifier.size(48.dp))
