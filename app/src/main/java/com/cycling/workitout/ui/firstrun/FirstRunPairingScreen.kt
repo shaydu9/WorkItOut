@@ -8,13 +8,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
@@ -148,6 +150,8 @@ private fun FirstRunPairingScreenContent(
     Column(
         modifier = (if (isTablet) Modifier.widthIn(max = 560.dp) else Modifier)
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
             .padding(16.dp)
     ) {
         StepIndicator(currentStep = step)
@@ -236,7 +240,7 @@ private fun StepIndicator(currentStep: PairingStep) {
                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Box(
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text("${idx + 1}", color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -299,10 +303,8 @@ private fun PairingStepContent(
         Spacer(Modifier.height(16.dp))
 
         val filtered = devices.filter { it.deviceType == deviceTypeFilter }
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(filtered, key = { it.address }) { device ->
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            filtered.forEach { device ->
                 DeviceRow(device = device, onClick = { onDeviceClick(device) })
             }
         }
