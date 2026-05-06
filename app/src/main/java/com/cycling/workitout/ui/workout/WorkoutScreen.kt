@@ -1,6 +1,9 @@
 package com.cycling.workitout.ui.workout
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import com.cycling.workitout.R
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -680,6 +683,7 @@ private fun ControlBar(
     stravaUploadState: StravaRepository.UploadState = StravaRepository.UploadState.Idle,
     onUploadToStrava: () -> Unit = {}
 ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -812,6 +816,20 @@ private fun ControlBar(
                 }
                 Spacer(modifier = Modifier.size(48.dp))
             }
+        }
+    }
+        // Strava brand attribution required by Strava API guidelines wherever
+        // we offer to push data to Strava — only render in the post-workout state
+        // since that's when the Upload-to-Strava action is shown.
+        if (workoutState == WorkoutState.COMPLETED) {
+            Spacer(Modifier.height(8.dp))
+            Image(
+                painter = painterResource(R.drawable.api_logo_pwrdby_strava_horiz_orange),
+                contentDescription = "Powered by Strava",
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .height(20.dp)
+            )
         }
     }
 }

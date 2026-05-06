@@ -244,10 +244,17 @@ private fun SettingsScreenContent(
                                 painter = painterResource(R.drawable.btn_strava_connect_with_orange),
                                 contentDescription = "Connect with Strava",
                                 modifier = Modifier
-                                    .height(44.dp)
+                                    .height(48.dp)
                                     .clickable(onClick = onConnectStrava)
                             )
                         }
+                        Image(
+                            painter = painterResource(R.drawable.api_logo_pwrdby_strava_horiz_orange),
+                            contentDescription = "Powered by Strava",
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .height(20.dp)
+                        )
                     }
                 }
             }
