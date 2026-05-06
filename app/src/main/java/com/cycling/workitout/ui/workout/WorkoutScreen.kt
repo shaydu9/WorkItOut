@@ -811,6 +811,12 @@ fun WorkoutProgressGraph(
     workoutName: String = "",
     ftpWatts: Int = 0
 ) {
+    val density = LocalDensity.current
+    // Pin font scale for graph labels — axis numbers and zone legend have intentional
+    // fixed sizes as part of the data visualization design.
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, fontScale = 1f)
+    ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -862,6 +868,7 @@ fun WorkoutProgressGraph(
             ZoneLegendItem(Color(0xFFFF5252), "Z6")
         }
     }
+    } // end CompositionLocalProvider
 }
 
 @Composable
@@ -988,8 +995,9 @@ private fun FreeRideTrace(
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.18f)
     val ftpColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val labelPx = with(density) { 10.sp.toPx() }
+    val density = LocalDensity.current
+    // Use density-only (no font scale) so Canvas text stays at its designed size.
+    val labelPx = 10f * density.density
     val leftPad = with(density) { 36.dp.toPx() }
     val topPad = with(density) { 4.dp.toPx() }
     val bottomPad = with(density) { 2.dp.toPx() }
