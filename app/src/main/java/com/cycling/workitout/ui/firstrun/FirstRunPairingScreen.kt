@@ -164,6 +164,19 @@ private fun FirstRunPairingScreenContent(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
+                val stepLabel = when (step) {
+                    PairingStep.TRAINER -> "Trainer · Step 1 of 5"
+                    PairingStep.CADENCE -> "Cadence · Step 2 of 5"
+                    PairingStep.HEART_RATE -> "Heart Rate · Step 3 of 5"
+                    PairingStep.PROFILE -> "Your Profile · Step 4 of 5"
+                    PairingStep.READY -> "All Set · Step 5 of 5"
+                }
+                Text(
+                    text = stepLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
                 when (step) {
                     PairingStep.TRAINER -> PairingStepBody(
                         title = "Pair your Smart Trainer",
@@ -280,25 +293,21 @@ private fun StepIndicator(currentStep: PairingStep) {
             val icon = entry.icon
             val label = entry.label
             val active = currentStep.ordinal >= idx
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Box(
+                    modifier = Modifier.size(36.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.size(36.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = label,
-                            tint = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
