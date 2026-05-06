@@ -75,7 +75,7 @@ class WorkoutViewModel(
     companion object {
         const val MIN_INTENSITY = 50
         const val MAX_INTENSITY = 200
-        const val INTENSITY_STEP = 5
+        const val INTENSITY_STEP = 1
     }
 
     val workoutProgress: StateFlow<WorkoutProgress> = workoutEngine.progress
