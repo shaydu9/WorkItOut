@@ -476,6 +476,8 @@ private fun WorkoutPreviewSheet(
                     workout.name,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 WattsPercentToggle(

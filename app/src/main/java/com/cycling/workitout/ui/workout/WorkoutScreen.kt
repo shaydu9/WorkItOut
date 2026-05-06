@@ -634,13 +634,13 @@ private fun BottomControlsRow(
                 Icon(Icons.Default.Add, contentDescription = "Increase intensity")
             }
         }
-        ControlPill {
+        ControlPill(modifier = Modifier.weight(1f)) {
             com.cycling.workitout.ui.library.WattsPercentToggle(
                 asPercent = displayAsPercent,
                 onChange = onDisplayChange
             )
         }
-        ControlPill {
+        ControlPill(modifier = Modifier.weight(1f)) {
             Text(
                 text = if (ergRearming) "ERG…" else "ERG",
                 style = MaterialTheme.typography.labelMedium,

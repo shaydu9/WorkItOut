@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -264,17 +265,17 @@ private fun FirstRunPairingScreenContent(
 @Composable
 private fun StepIndicator(currentStep: PairingStep) {
     val steps = listOf(
-        "Trainer" to PairingStep.TRAINER,
-        "Cadence" to PairingStep.CADENCE,
-        "HR" to PairingStep.HEART_RATE,
-        "You" to PairingStep.PROFILE,
-        "Done" to PairingStep.READY
+        Icons.Default.FitnessCenter to "Trainer" to PairingStep.TRAINER,
+        Icons.Default.Cached to "Cadence" to PairingStep.CADENCE,
+        Icons.Default.FavoriteBorder to "HR" to PairingStep.HEART_RATE,
+        Icons.Default.Person to "You" to PairingStep.PROFILE,
+        Icons.Default.Check to "Done" to PairingStep.READY
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        steps.forEachIndexed { idx, (label, s) ->
+        steps.forEachIndexed { idx, ((icon, label), s) ->
             val active = currentStep.ordinal >= idx
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Surface(
@@ -282,13 +283,14 @@ private fun StepIndicator(currentStep: PairingStep) {
                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Box(
-                        modifier = Modifier.defaultMinSize(minWidth = 32.dp, minHeight = 32.dp),
+                        modifier = Modifier.size(36.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            "${idx + 1}",
-                            color = if (active) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
