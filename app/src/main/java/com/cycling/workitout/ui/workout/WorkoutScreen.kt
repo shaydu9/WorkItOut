@@ -196,12 +196,9 @@ private fun WorkoutScreenContent(
                 )
                 Spacer(Modifier.height(8.dp))
                 if (!isFreeRide) {
-                    IntensityRow(
+                    BottomControlsRow(
                         intensityPercent = intensityPercent,
-                        onIntensityDelta = onIntensityDelta
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    ErgToggleRow(
+                        onIntensityDelta = onIntensityDelta,
                         ergEnabled = ergEnabled,
                         ergRearming = ergRearming,
                         onErgChange = onErgChange,
@@ -280,12 +277,9 @@ private fun WorkoutScreenContent(
                 Spacer(Modifier.height(8.dp))
 
                 if (!isFreeRide) {
-                    IntensityRow(
+                    BottomControlsRow(
                         intensityPercent = intensityPercent,
-                        onIntensityDelta = onIntensityDelta
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    ErgToggleRow(
+                        onIntensityDelta = onIntensityDelta,
                         ergEnabled = ergEnabled,
                         ergRearming = ergRearming,
                         onErgChange = onErgChange,
@@ -556,10 +550,17 @@ private fun StatCell(
     }
 }
 
+// Single bottom row that consolidates intensity +/-, W/% toggle, and the ERG switch.
+// Kept dense so it doesn't push the stats grid off short screens.
 @Composable
-private fun IntensityRow(
+private fun BottomControlsRow(
     intensityPercent: Int,
-    onIntensityDelta: (Int) -> Unit
+    onIntensityDelta: (Int) -> Unit,
+    ergEnabled: Boolean,
+    ergRearming: Boolean,
+    onErgChange: (Boolean) -> Unit,
+    displayAsPercent: Boolean,
+    onDisplayChange: (Boolean) -> Unit
 ) {
     val step = WorkoutViewModel.INTENSITY_STEP
     val canDec = intensityPercent > WorkoutViewModel.MIN_INTENSITY
@@ -569,86 +570,54 @@ private fun IntensityRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton(
+                onClick = { onIntensityDelta(-step) },
+                enabled = canDec,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
+            }
             Text(
-                text = "INTENSITY",
-                style = MaterialTheme.typography.labelMedium,
+                text = "$intensityPercent%",
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = if (ergRearming) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .widthIn(min = 56.dp)
+                    .padding(horizontal = 4.dp),
+                textAlign = TextAlign.Center
             )
-            Text(
-                text = "Scales target power",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            FilledTonalIconButton(
+                onClick = { onIntensityDelta(step) },
+                enabled = canInc,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Increase intensity")
+            }
         }
-        FilledTonalIconButton(
-            onClick = { onIntensityDelta(-step) },
-            enabled = canDec
-        ) {
-            Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = "$intensityPercent%",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.widthIn(min = 56.dp),
-            textAlign = TextAlign.Center
+        com.cycling.workitout.ui.library.WattsPercentToggle(
+            asPercent = displayAsPercent,
+            onChange = onDisplayChange
         )
-        Spacer(Modifier.width(8.dp))
-        FilledTonalIconButton(
-            onClick = { onIntensityDelta(step) },
-            enabled = canInc
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Increase intensity")
-        }
-    }
-}
-
-@Composable
-private fun ErgToggleRow(
-    ergEnabled: Boolean,
-    ergRearming: Boolean = false,
-    onErgChange: (Boolean) -> Unit,
-    displayAsPercent: Boolean,
-    onDisplayChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (ergRearming) "ERG MODE · RE-ARMING…" else "ERG MODE",
+                text = if (ergRearming) "ERG…" else "ERG",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = when {
                     ergRearming -> MaterialTheme.colorScheme.tertiary
                     ergEnabled -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            Text(
-                text = when {
-                    ergRearming -> "Re-locking trainer to target"
-                    ergEnabled -> "Trainer locks to target power"
-                    else -> "Free ride · timer continues"
                 },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                modifier = Modifier.padding(end = 4.dp)
+            )
+            Switch(
+                checked = ergEnabled,
+                onCheckedChange = onErgChange
             )
         }
-        com.cycling.workitout.ui.library.WattsPercentToggle(
-            asPercent = displayAsPercent,
-            onChange = onDisplayChange
-        )
-        Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = ergEnabled,
-            onCheckedChange = onErgChange
-        )
     }
 }
 
@@ -881,7 +850,14 @@ private fun WorkoutBlocksGraph(
         return
     }
 
-    val maxPower = intervals.maxOf { it.targetPower }.toFloat().coerceAtLeast(1f)
+    // Y-axis is anchored at 2×FTP so FTP sits at the vertical midpoint. This keeps the
+    // actual-power trace on-canvas when the rider scales intensity past 100% (the old
+    // "stretch to max interval target" axis would push the trace off the top).
+    // Falls back to the largest interval target if FTP isn't set yet.
+    val maxPower = (
+        if (ftpWatts > 0) (ftpWatts * 2).toFloat()
+        else intervals.maxOf { it.targetPower }.toFloat()
+    ).coerceAtLeast(1f)
 
     androidx.compose.foundation.Canvas(
         modifier = Modifier.fillMaxSize()
