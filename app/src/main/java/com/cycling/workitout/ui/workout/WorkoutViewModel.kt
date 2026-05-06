@@ -72,6 +72,12 @@ class WorkoutViewModel(
     val stravaConnected: StateFlow<Boolean> = stravaRepository.isConnected
     val stravaUploadState: StateFlow<StravaRepository.UploadState> = stravaRepository.uploadState
 
+    companion object {
+        const val MIN_INTENSITY = 50
+        const val MAX_INTENSITY = 200
+        const val INTENSITY_STEP = 5
+    }
+
     val workoutProgress: StateFlow<WorkoutProgress> = workoutEngine.progress
     val recordedData: StateFlow<List<RecordedDataPoint>> = workoutEngine.recordedData
 
@@ -119,6 +125,14 @@ class WorkoutViewModel(
     // For free ride, force OFF and never auto-arm.
     private val _ergEnabled = MutableStateFlow(!isFreeRide)
     val ergEnabled: StateFlow<Boolean> = _ergEnabled.asStateFlow()
+
+    // Intensity multiplier (50..200%, 5% steps). Applied to every target watt sent to the trainer
+    // and to the watchdog's deviation check, so the rider can scale a workout up/down on the fly.
+    private val _intensityPercent = MutableStateFlow(100)
+    val intensityPercent: StateFlow<Int> = _intensityPercent.asStateFlow()
+
+    private fun scaledTarget(baseWatts: Int): Int =
+        (baseWatts * _intensityPercent.value / 100).coerceAtLeast(0)
 
     // True for ~1.5s while the watchdog auto-rearms ERG; UI shows a transient "Re-arming…" hint.
     private val _ergRearming = MutableStateFlow(false)
@@ -185,7 +199,7 @@ class WorkoutViewModel(
         workoutEngine.onTargetPowerChanged = { watts ->
             lastIntervalTransitionMs = System.currentTimeMillis()
             if (_ergEnabled.value) {
-                bleManager.setTargetPower(ergToken, watts)
+                bleManager.setTargetPower(ergToken, scaledTarget(watts))
             }
         }
 
@@ -223,8 +237,8 @@ class WorkoutViewModel(
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
                     bleManager.requestFtmsControl(ergToken)
-                    bleManager.setTargetPower(ergToken, firstTarget)
-                    Timber.tag("ERG").i("Pre-sent first interval target $firstTarget W on screen entry")
+                    bleManager.setTargetPower(ergToken, scaledTarget(firstTarget))
+                    Timber.tag("ERG").i("Pre-sent first interval target ${scaledTarget(firstTarget)} W on screen entry")
                 }
             }
         }
@@ -264,8 +278,8 @@ class WorkoutViewModel(
             if (_ergEnabled.value) {
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
-                    bleManager.setTargetPower(ergToken, firstTarget)
-                    Timber.tag("ERG").i("Startup: reopened burst for first target $firstTarget W")
+                    bleManager.setTargetPower(ergToken, scaledTarget(firstTarget))
+                    Timber.tag("ERG").i("Startup: reopened burst for first target ${scaledTarget(firstTarget)} W")
                 }
             }
             runStartupCountdown()
@@ -295,6 +309,18 @@ class WorkoutViewModel(
                 }
             }
             if (!aborted) return
+        }
+    }
+
+    fun adjustIntensity(deltaPercent: Int) {
+        if (isFreeRide) return
+        val next = (_intensityPercent.value + deltaPercent).coerceIn(MIN_INTENSITY, MAX_INTENSITY)
+        if (next == _intensityPercent.value) return
+        _intensityPercent.value = next
+        Timber.tag("ERG").i("Intensity → $next%")
+        if (_ergEnabled.value) {
+            val base = workoutEngine.progress.value.targetPowerWatts
+            if (base > 0) bleManager.setTargetPower(ergToken, scaledTarget(base))
         }
     }
 
@@ -452,7 +478,7 @@ class WorkoutViewModel(
                 consecutiveDeviationSec = 0; continue
             }
 
-            val target = workoutEngine.progress.value.targetPowerWatts
+            val target = scaledTarget(workoutEngine.progress.value.targetPowerWatts)
             if (target <= 0) { consecutiveDeviationSec = 0; continue }
 
             val live = bleManager.powerData.value
@@ -573,7 +599,7 @@ class WorkoutViewModel(
                 bleManager.requestFtmsControl(ergToken)
                 bleManager.startFtmsWorkout(ergToken)
                 val current = workoutEngine.progress.value.targetPowerWatts
-                if (current > 0) bleManager.setTargetPower(ergToken, current)
+                if (current > 0) bleManager.setTargetPower(ergToken, scaledTarget(current))
             } else {
                 bleManager.stopFtmsWorkout(ergToken)
             }

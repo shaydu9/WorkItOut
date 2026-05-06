@@ -39,6 +39,7 @@ fun WorkoutScreen(
     val ergRearming by viewModel.ergRearming.collectAsStateWithLifecycle()
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
     val currentFtp by viewModel.currentFtp.collectAsStateWithLifecycle()
+    val intensityPercent by viewModel.intensityPercent.collectAsStateWithLifecycle()
     val startupState by viewModel.startupState.collectAsStateWithLifecycle()
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
     val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
@@ -78,6 +79,8 @@ fun WorkoutScreen(
             ergRearming = ergRearming,
             displayAsPercent = displayAsPercent,
             currentFtp = currentFtp,
+            intensityPercent = intensityPercent,
+            onIntensityDelta = viewModel::adjustIntensity,
             startupState = startupState,
             exportState = exportState,
             stravaConnected = stravaConnected,
@@ -107,6 +110,8 @@ private fun WorkoutScreenContent(
     ergRearming: Boolean,
     displayAsPercent: Boolean,
     currentFtp: Int,
+    intensityPercent: Int,
+    onIntensityDelta: (Int) -> Unit,
     startupState: WorkoutViewModel.StartupState,
     exportState: WorkoutViewModel.ExportState,
     stravaConnected: Boolean,
@@ -178,7 +183,7 @@ private fun WorkoutScreenContent(
                 Spacer(Modifier.height(8.dp))
                 StatsGrid(
                     threeSecPower = metrics.power,
-                    targetPower = progress.targetPowerWatts,
+                    targetPower = progress.targetPowerWatts * intensityPercent / 100,
                     intervalRemaining = progress.intervalRemainingSeconds,
                     cadence = metrics.cadence,
                     heartRate = metrics.heartRate,
@@ -191,6 +196,11 @@ private fun WorkoutScreenContent(
                 )
                 Spacer(Modifier.height(8.dp))
                 if (!isFreeRide) {
+                    IntensityRow(
+                        intensityPercent = intensityPercent,
+                        onIntensityDelta = onIntensityDelta
+                    )
+                    Spacer(Modifier.height(8.dp))
                     ErgToggleRow(
                         ergEnabled = ergEnabled,
                         ergRearming = ergRearming,
@@ -253,7 +263,7 @@ private fun WorkoutScreenContent(
 
                 StatsGrid(
                     threeSecPower = metrics.power,
-                    targetPower = progress.targetPowerWatts,
+                    targetPower = progress.targetPowerWatts * intensityPercent / 100,
                     intervalRemaining = progress.intervalRemainingSeconds,
                     cadence = metrics.cadence,
                     heartRate = metrics.heartRate,
@@ -270,6 +280,11 @@ private fun WorkoutScreenContent(
                 Spacer(Modifier.height(8.dp))
 
                 if (!isFreeRide) {
+                    IntensityRow(
+                        intensityPercent = intensityPercent,
+                        onIntensityDelta = onIntensityDelta
+                    )
+                    Spacer(Modifier.height(8.dp))
                     ErgToggleRow(
                         ergEnabled = ergEnabled,
                         ergRearming = ergRearming,
@@ -537,6 +552,56 @@ private fun StatCell(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun IntensityRow(
+    intensityPercent: Int,
+    onIntensityDelta: (Int) -> Unit
+) {
+    val step = WorkoutViewModel.INTENSITY_STEP
+    val canDec = intensityPercent > WorkoutViewModel.MIN_INTENSITY
+    val canInc = intensityPercent < WorkoutViewModel.MAX_INTENSITY
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "INTENSITY",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "Scales target power",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        FilledTonalIconButton(
+            onClick = { onIntensityDelta(-step) },
+            enabled = canDec
+        ) {
+            Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "$intensityPercent%",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.widthIn(min = 56.dp),
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.width(8.dp))
+        FilledTonalIconButton(
+            onClick = { onIntensityDelta(step) },
+            enabled = canInc
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Increase intensity")
         }
     }
 }
