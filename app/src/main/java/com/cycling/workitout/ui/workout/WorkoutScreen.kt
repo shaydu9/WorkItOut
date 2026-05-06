@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
@@ -550,8 +551,25 @@ private fun StatCell(
     }
 }
 
-// Single bottom row that consolidates intensity +/-, W/% toggle, and the ERG switch.
-// Kept dense so it doesn't push the stats grid off short screens.
+@Composable
+private fun ControlPill(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) { content() }
+    }
+}
+
+// Three separate pills: intensity, W/% display unit, ERG switch.
 @Composable
 private fun BottomControlsRow(
     intensityPercent: Int,
@@ -568,13 +586,13 @@ private fun BottomControlsRow(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        ControlPill(modifier = Modifier.weight(1f)) {
             FilledTonalIconButton(
                 onClick = { onIntensityDelta(-step) },
                 enabled = canDec,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
             }
@@ -582,26 +600,28 @@ private fun BottomControlsRow(
                 text = "$intensityPercent%",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = if (ergRearming) MaterialTheme.colorScheme.tertiary
-                        else MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
-                    .widthIn(min = 56.dp)
+                    .weight(1f)
                     .padding(horizontal = 4.dp),
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 1
             )
             FilledTonalIconButton(
                 onClick = { onIntensityDelta(step) },
                 enabled = canInc,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Increase intensity")
             }
         }
-        com.cycling.workitout.ui.library.WattsPercentToggle(
-            asPercent = displayAsPercent,
-            onChange = onDisplayChange
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        ControlPill {
+            com.cycling.workitout.ui.library.WattsPercentToggle(
+                asPercent = displayAsPercent,
+                onChange = onDisplayChange
+            )
+        }
+        ControlPill {
             Text(
                 text = if (ergRearming) "ERG…" else "ERG",
                 style = MaterialTheme.typography.labelMedium,
@@ -615,7 +635,8 @@ private fun BottomControlsRow(
             )
             Switch(
                 checked = ergEnabled,
-                onCheckedChange = onErgChange
+                onCheckedChange = onErgChange,
+                modifier = Modifier.scale(0.85f)
             )
         }
     }

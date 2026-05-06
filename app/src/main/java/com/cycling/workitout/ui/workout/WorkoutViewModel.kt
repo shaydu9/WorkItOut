@@ -76,6 +76,7 @@ class WorkoutViewModel(
         const val MIN_INTENSITY = 50
         const val MAX_INTENSITY = 200
         const val INTENSITY_STEP = 1
+        const val AUTO_PAUSE_AFTER_SEC = 3
     }
 
     val workoutProgress: StateFlow<WorkoutProgress> = workoutEngine.progress
@@ -254,6 +255,9 @@ class WorkoutViewModel(
         // and ERG is enabled. Cheap (1 Hz tick reading already-cached StateFlow values).
         viewModelScope.launch { runErgWatchdog() }
 
+        // Pause when the rider stops pedaling, resume when they start again.
+        viewModelScope.launch { runAutoPauseWatchdog() }
+
         // Keep the foreground-service notification in sync with elapsed time + interval target.
         viewModelScope.launch {
             workoutEngine.progress.collect { progress ->
@@ -312,6 +316,47 @@ class WorkoutViewModel(
         }
     }
 
+    // Auto-pause: cadence stayed at 0 for AUTO_PAUSE_AFTER_SEC. We track who triggered the
+    // pause so we only auto-resume on pedaling if WE paused — a manual pause stays paused
+    // until the user resumes.
+    @Volatile private var autoPaused = false
+
+    private suspend fun runAutoPauseWatchdog() {
+        var zeroCadenceSec = 0
+        while (true) {
+            delay(1_000L)
+            val state = workoutEngine.progress.value.workoutState
+            val cadence = bleManager.powerData.value.cadence
+            when (state) {
+                WorkoutState.RUNNING -> {
+                    if (cadence == 0) {
+                        zeroCadenceSec++
+                        if (zeroCadenceSec >= AUTO_PAUSE_AFTER_SEC) {
+                            autoPaused = true
+                            workoutEngine.pause()
+                            Timber.tag("WORKOUT").i("Auto-paused: cadence 0 for ${AUTO_PAUSE_AFTER_SEC}s")
+                            zeroCadenceSec = 0
+                        }
+                    } else {
+                        zeroCadenceSec = 0
+                    }
+                }
+                WorkoutState.PAUSED -> {
+                    zeroCadenceSec = 0
+                    if (autoPaused && cadence > 0) {
+                        autoPaused = false
+                        workoutEngine.resume()
+                        Timber.tag("WORKOUT").i("Auto-resumed: pedaling detected")
+                    }
+                }
+                else -> {
+                    zeroCadenceSec = 0
+                    autoPaused = false
+                }
+            }
+        }
+    }
+
     fun adjustIntensity(deltaPercent: Int) {
         if (isFreeRide) return
         val next = (_intensityPercent.value + deltaPercent).coerceIn(MIN_INTENSITY, MAX_INTENSITY)
@@ -324,8 +369,8 @@ class WorkoutViewModel(
         }
     }
 
-    fun pauseWorkout() = workoutEngine.pause()
-    fun resumeWorkout() = workoutEngine.resume()
+    fun pauseWorkout() { autoPaused = false; workoutEngine.pause() }
+    fun resumeWorkout() { autoPaused = false; workoutEngine.resume() }
     fun stopWorkout() = workoutEngine.stop()
 
     // Idempotent — skips if already written this session.
