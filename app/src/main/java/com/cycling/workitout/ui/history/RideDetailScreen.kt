@@ -30,6 +30,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cycling.workitout.R
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.ui.workout.CompactDataPoint
 import java.text.SimpleDateFormat
@@ -50,7 +51,7 @@ fun RideDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(ride?.name ?: "Ride Details") },
+                title = { Text(ride?.name ?: "Ride Details", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
