@@ -47,6 +47,14 @@ controls you have over it.
 - **Firebase Cloud Functions** that brokers Strava OAuth so the Strava
   client secret stays server-side.
 
+### Usage data Strava may collect
+When you upload a ride to Strava, Strava receives the API call along
+with usage metadata (timestamp, endpoint, response status, etc.) and
+may use that data for any business purpose under their own privacy
+policy. We disclose this here per Strava's API Agreement §2.12. See
+[Strava's privacy policy](https://www.strava.com/legal/privacy) for
+how they handle that information.
+
 ## How Strava data is handled
 
 This is the most important section for Strava-connected users.
@@ -56,9 +64,17 @@ This is the most important section for Strava-connected users.
 - **The only Strava endpoints we use are uploads:** `POST /api/v3/uploads`
   and the matching status poll `GET /api/v3/uploads/{id}`.
 - **No Strava data is displayed in the app**, because we never request it
-  in the first place. The only Strava-derived value stored in your
-  database is the activity ID returned from a successful upload, used
-  to generate a "View on Strava" link to your own activity.
+  in the first place.
+- **Strava-derived values we do store locally** (so the app stays useful
+  without re-fetching data from Strava):
+  - **Your athlete display name**, returned by Strava when you complete
+    OAuth, so the Settings screen can show "Connected as <your name>".
+    Refreshed on every reconnect.
+  - **Activity IDs** returned from your own uploads, so each ride in
+    history can render a "View on Strava" link back to your activity.
+  Both are visible only to you, never displayed to anyone else, and are
+  deleted when you disconnect Strava (athlete name) or delete the ride
+  (activity ID).
 - **Strava data is never shared with third parties**, including AI
   services. The Strava integration runs entirely separately from the
   AI workout generator.
