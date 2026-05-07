@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Cached
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,6 +49,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -64,7 +67,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -74,14 +76,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.WorkoutDefinition
-import com.cycling.workitout.data.WorkoutIntervalDef
+import com.cycling.workitout.data.scaledByIntensity
 import com.cycling.workitout.ui.components.DevicePairingDialog
+import com.cycling.workitout.ui.components.WorkoutPreviewChart
 import com.cycling.workitout.ui.components.WorkoutRecoveryDialog
 import com.cycling.workitout.ui.components.rememberBlePermissionState
-import com.cycling.workitout.ui.library.WattsPercentToggle
-import com.cycling.workitout.ui.library.formatTarget
 import timber.log.Timber
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private val DURATION_OPTIONS = listOf(30, 45, 60, 75, 90)
 
@@ -161,6 +163,8 @@ fun HomeScreen(
             onSetDisplayAsPercent = viewModel::setDisplayAsPercent,
             onSaveWorkoutToLibrary = viewModel::saveWorkoutToLibrary,
             onDismissPreview = viewModel::dismissPreview,
+            onAdjustIntensity = viewModel::adjustIntensity,
+            onRegenerate = viewModel::regenerateWorkout,
             onStartWorkout = onStartWorkout,
             onTrainerTap = onTrainerTap,
             onCadenceTap = onCadenceTap,
@@ -214,6 +218,8 @@ private fun HomeScreenContent(
     onSetDisplayAsPercent: (Boolean) -> Unit,
     onSaveWorkoutToLibrary: () -> Unit,
     onDismissPreview: () -> Unit,
+    onAdjustIntensity: (Int) -> Unit,
+    onRegenerate: () -> Unit,
     onStartWorkout: (WorkoutDefinition) -> Unit,
     onTrainerTap: () -> Unit,
     onCadenceTap: () -> Unit,
@@ -358,15 +364,19 @@ private fun HomeScreenContent(
     if (state.preview != null) {
         WorkoutPreviewSheet(
             workout = state.preview,
+            intensityScale = state.intensityScale,
+            isGenerating = state.isGenerating,
             displayAsPercent = displayAsPercent,
-            onToggleDisplay = onSetDisplayAsPercent,
+            onAdjustIntensity = onAdjustIntensity,
+            onRegenerate = onRegenerate,
             onStart = {
-                val w = state.preview
+                // Apply intensity scale before handing off — the trainer/UI downstream
+                // gets a self-contained workout with the user's adjustments baked in.
+                val scaled = state.preview.scaledByIntensity(state.intensityScale)
                 onDismissPreview()
-                onStartWorkout(w)
+                onStartWorkout(scaled)
             },
             onDismiss = onDismissPreview,
-            onSave = onSaveWorkoutToLibrary
         )
     }
 }
@@ -450,27 +460,38 @@ private fun CustomPromptDialog(
 @Composable
 private fun WorkoutPreviewSheet(
     workout: WorkoutDefinition,
+    intensityScale: Float,
+    isGenerating: Boolean,
     displayAsPercent: Boolean,
-    onToggleDisplay: (Boolean) -> Unit,
+    onAdjustIntensity: (Int) -> Unit,
+    onRegenerate: () -> Unit,
     onStart: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (() -> Unit)? = null
 ) {
-    var saved by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        // Show intervals with the user's intensity adjustment baked in so the chart
+        // reflects exactly what will be ridden.
+        val displayWorkout = remember(workout, intensityScale) {
+            workout.scaledByIntensity(intensityScale)
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Header — name on the left, regenerate button on the right.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     workout.name,
@@ -478,60 +499,64 @@ private fun WorkoutPreviewSheet(
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
-                WattsPercentToggle(
-                    asPercent = displayAsPercent,
-                    onChange = onToggleDisplay
-                )
-                if (onSave != null) {
-                    Spacer(Modifier.width(4.dp))
-                    IconButton(onClick = {
-                        onSave()
-                        saved = true
-                    }) {
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = onRegenerate,
+                    enabled = !isGenerating,
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
                         Icon(
-                            if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = if (saved) "Saved" else "Save to library",
-                            tint = if (saved) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            Icons.Default.Cached,
+                            contentDescription = "Regenerate workout",
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
             }
 
-            val totalMin = workout.totalDurationSeconds / 60
-            Text(
-                "${totalMin} min · ${workout.intervals.size} intervals",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (workout.description.isNotBlank()) {
-                Text(workout.description, style = MaterialTheme.typography.bodyMedium)
-            }
-
-            HorizontalDivider()
-
-            Column(
+            // Interactive bar chart — the centerpiece. Tap/drag to scrub.
+            WorkoutPreviewChart(
+                intervals = displayWorkout.intervals,
+                displayAsPercent = displayAsPercent,
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                workout.intervals.forEach { interval ->
-                    IntervalRow(interval, displayAsPercent)
-                }
+            )
+
+            // Description — capped to 3 lines so the sheet stays no-scroll.
+            if (workout.description.isNotBlank()) {
+                Text(
+                    workout.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
 
+            // Intensity pill — −/+ steps of 5%, clamped 70%–130%.
+            IntensityPill(
+                scale = intensityScale,
+                onAdjust = onAdjustIntensity,
+            )
+
+            // Sticky action row.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) { Text("Discard") }
                 Button(
                     onClick = onStart,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
@@ -543,47 +568,50 @@ private fun WorkoutPreviewSheet(
 }
 
 @Composable
-private fun IntervalRow(interval: WorkoutIntervalDef, displayAsPercent: Boolean = false) {
+private fun IntensityPill(
+    scale: Float,
+    onAdjust: (Int) -> Unit,
+) {
+    val percent = (scale * 100f).roundToInt()
+    val accent = when {
+        percent > 100 -> MaterialTheme.colorScheme.tertiary
+        percent < 100 -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = Color(interval.zone.colorHex).copy(alpha = 0.12f),
-                shape = RoundedCornerShape(8.dp)
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = 4.dp, height = 28.dp)
-                .background(Color(interval.zone.colorHex), RoundedCornerShape(2.dp))
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                interval.name,
-                fontWeight = FontWeight.Medium,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                interval.zone.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        val mins = interval.durationSeconds / 60
-        val secs = interval.durationSeconds % 60
         Text(
-            "%d:%02d".format(mins, secs),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(end = 12.dp)
-        )
-        Text(
-            formatTarget(interval, displayAsPercent),
+            "Intensity",
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            style = MaterialTheme.typography.bodyMedium
         )
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 1.dp,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onAdjust(-5) }) {
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
+                }
+                Text(
+                    "$percent%",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accent,
+                    modifier = Modifier
+                        .widthIn(min = 56.dp)
+                        .padding(horizontal = 4.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                IconButton(onClick = { onAdjust(5) }) {
+                    Icon(Icons.Default.Add, contentDescription = "Increase intensity")
+                }
+            }
+        }
     }
 }
 

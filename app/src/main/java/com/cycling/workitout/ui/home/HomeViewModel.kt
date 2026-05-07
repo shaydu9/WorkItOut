@@ -28,7 +28,11 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.math.roundToInt
 import timber.log.Timber
+
+private const val MIN_INTENSITY = 0.70f
+private const val MAX_INTENSITY = 1.30f
 
 enum class Difficulty(val label: String) {
     EASY("Easy"),
@@ -45,8 +49,17 @@ data class HomeUiState(
     val preview: WorkoutDefinition? = null,
     val customPromptOpen: Boolean = false,
     val customPromptText: String = "",
-    val recoveryCheckpoint: ActiveWorkoutEntity? = null
+    val recoveryCheckpoint: ActiveWorkoutEntity? = null,
+    // Intensity multiplier applied to the previewed workout. 1.0 = AI's original suggestion.
+    // Adjusted via the −/+ pill in the preview sheet, reset on dismiss/regenerate.
+    val intensityScale: Float = 1f,
 )
+
+// Captures the inputs to the last generation so the reload button can repeat it verbatim.
+private sealed class LastGenRequest {
+    data class Structured(val durationMinutes: Int, val difficulty: Difficulty) : LastGenRequest()
+    data class Custom(val prompt: String) : LastGenRequest()
+}
 
 class HomeViewModel(
     private val bleManager: BleManager,
@@ -57,6 +70,8 @@ class HomeViewModel(
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private var lastGenRequest: LastGenRequest? = null
 
     private val checkpointStore = WorkoutCheckpointStore(
         WorkItOutApplication.database.activeWorkoutDao()
@@ -221,13 +236,39 @@ class HomeViewModel(
 
     // Calls Claude; falls back to the local procedural generator if the API call fails.
     fun generateWorkout() {
+        val state = _uiState.value
+        val request = LastGenRequest.Structured(state.durationMinutes, state.difficulty)
+        lastGenRequest = request
+        runStructuredGeneration(request)
+    }
+
+    fun generateCustomWorkout() {
+        val prompt = _uiState.value.customPromptText.trim()
+        if (prompt.isBlank()) return
+        val request = LastGenRequest.Custom(prompt)
+        lastGenRequest = request
+        _uiState.value = _uiState.value.copy(customPromptOpen = false, customPromptText = "")
+        runCustomGeneration(request)
+    }
+
+    // Re-runs whichever generation produced the current preview. Resets the intensity pill —
+    // a fresh suggestion shouldn't inherit the prior trim.
+    fun regenerateWorkout() {
+        val request = lastGenRequest ?: return
+        _uiState.value = _uiState.value.copy(intensityScale = 1f)
+        when (request) {
+            is LastGenRequest.Structured -> runStructuredGeneration(request)
+            is LastGenRequest.Custom -> runCustomGeneration(request)
+        }
+    }
+
+    private fun runStructuredGeneration(request: LastGenRequest.Structured) {
         _uiState.value = _uiState.value.copy(isGenerating = true, error = null)
         viewModelScope.launch {
-            val state = _uiState.value
             val workout = try {
                 aiService.generateStructured(
-                    durationMinutes = state.durationMinutes,
-                    difficulty = state.difficulty,
+                    durationMinutes = request.durationMinutes,
+                    difficulty = request.difficulty,
                     ftp = ftp.value
                 )
             } catch (t: Throwable) {
@@ -236,8 +277,8 @@ class HomeViewModel(
                     error = "AI unavailable (${t.message}). Using local fallback."
                 )
                 LocalWorkoutGenerator.generate(
-                    durationMinutes = state.durationMinutes,
-                    difficulty = state.difficulty,
+                    durationMinutes = request.durationMinutes,
+                    difficulty = request.difficulty,
                     ftp = ftp.value
                 )
             }
@@ -248,21 +289,14 @@ class HomeViewModel(
         }
     }
 
-    fun generateCustomWorkout() {
-        val prompt = _uiState.value.customPromptText.trim()
-        if (prompt.isBlank()) return
-        _uiState.value = _uiState.value.copy(
-            isGenerating = true,
-            error = null,
-            customPromptOpen = false
-        )
+    private fun runCustomGeneration(request: LastGenRequest.Custom) {
+        _uiState.value = _uiState.value.copy(isGenerating = true, error = null)
         viewModelScope.launch {
             try {
-                val workout = aiService.generateFromPrompt(prompt, ftp.value)
+                val workout = aiService.generateFromPrompt(request.prompt, ftp.value)
                 _uiState.value = _uiState.value.copy(
                     isGenerating = false,
-                    preview = workout,
-                    customPromptText = ""
+                    preview = workout
                 )
             } catch (t: Throwable) {
                 Timber.tag("AI").w(t, "AI custom generation failed")
@@ -274,8 +308,18 @@ class HomeViewModel(
         }
     }
 
+    // Bumps the preview intensity in 5% steps, clamped between 70% and 130%.
+    fun adjustIntensity(deltaPercent: Int) {
+        val current = _uiState.value.intensityScale
+        val next = ((current * 100f).roundToInt() + deltaPercent) / 100f
+        val clamped = next.coerceIn(MIN_INTENSITY, MAX_INTENSITY)
+        if (clamped != current) {
+            _uiState.value = _uiState.value.copy(intensityScale = clamped)
+        }
+    }
+
     fun dismissPreview() {
-        _uiState.value = _uiState.value.copy(preview = null)
+        _uiState.value = _uiState.value.copy(preview = null, intensityScale = 1f)
     }
 
     fun clearError() {

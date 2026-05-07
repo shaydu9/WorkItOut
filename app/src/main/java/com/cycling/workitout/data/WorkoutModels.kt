@@ -52,6 +52,17 @@ fun WorkoutDefinition.withFtp(ftp: Int): WorkoutDefinition =
         it.copy(targetPowerWatts = (it.targetPowerPercentFtp * ftp).roundToInt().coerceAtLeast(40))
     })
 
+// Scales every interval's target by `scale` (e.g. 1.05 = +5%). Used by the preview intensity pill.
+fun WorkoutDefinition.scaledByIntensity(scale: Float): WorkoutDefinition {
+    if (scale == 1f) return this
+    return copy(intervals = intervals.map {
+        it.copy(
+            targetPowerPercentFtp = it.targetPowerPercentFtp * scale,
+            targetPowerWatts = (it.targetPowerWatts * scale).roundToInt().coerceAtLeast(40),
+        )
+    })
+}
+
 enum class WorkoutState {
     NOT_STARTED,
     RUNNING,

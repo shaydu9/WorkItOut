@@ -31,6 +31,8 @@ import com.cycling.workitout.data.WorkoutState
 import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.PowerDataPoint
 import com.cycling.workitout.ui.components.WorkoutInterval
+import com.cycling.workitout.ui.components.darken
+import com.cycling.workitout.ui.components.lighten
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -929,30 +931,69 @@ private fun WorkoutBlocksGraph(
         else intervals.maxOf { it.targetPower }.toFloat()
     ).coerceAtLeast(1f)
 
+    // Identify the in-progress interval — used to brighten it and dim the rest.
+    val activeIntervalIndex: Int = remember(intervals, currentTimeSeconds, workoutState) {
+        if (workoutState != WorkoutState.RUNNING && workoutState != WorkoutState.PAUSED) return@remember -1
+        var acc = 0
+        intervals.indexOfFirst {
+            acc += it.durationSeconds
+            currentTimeSeconds < acc
+        }
+    }
+
     androidx.compose.foundation.Canvas(
         modifier = Modifier.fillMaxSize()
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
         val totalDuration = totalDurationSeconds.toFloat()
+        val cornerPx = 3.dp.toPx()
 
         var cumulativeSeconds = 0f
-        for (interval in intervals) {
+        intervals.forEachIndexed { i, interval ->
             val blockStart = (cumulativeSeconds / totalDuration) * canvasWidth
             val blockWidth = (interval.durationSeconds.toFloat() / totalDuration) * canvasWidth
             val blockHeight = (interval.targetPower.toFloat() / maxPower) * canvasHeight * 0.85f
+            val topLeft = androidx.compose.ui.geometry.Offset(blockStart, canvasHeight - blockHeight)
+            val blockSize = androidx.compose.ui.geometry.Size(blockWidth, blockHeight)
 
-            drawRect(
-                color = interval.color.copy(alpha = 0.4f),
-                topLeft = androidx.compose.ui.geometry.Offset(blockStart, canvasHeight - blockHeight),
-                size = androidx.compose.ui.geometry.Size(blockWidth, blockHeight)
+            val isActive = i == activeIntervalIndex
+            // Dim non-active bars only when there IS an active one (i.e. we're riding).
+            val dim = if (activeIntervalIndex < 0 || isActive) 1f else 0.40f
+
+            val gradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(
+                    interval.color.lighten(0.45f).copy(alpha = 0.95f * dim),
+                    interval.color.copy(alpha = 0.95f * dim),
+                    interval.color.darken(0.15f).copy(alpha = 0.95f * dim),
+                ),
+                startY = topLeft.y,
+                endY = topLeft.y + blockHeight
             )
-            drawRect(
-                color = interval.color.copy(alpha = 0.7f),
-                topLeft = androidx.compose.ui.geometry.Offset(blockStart, canvasHeight - blockHeight),
-                size = androidx.compose.ui.geometry.Size(blockWidth, blockHeight),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+            drawRoundRect(
+                brush = gradient,
+                topLeft = topLeft,
+                size = blockSize,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerPx, cornerPx)
             )
+            // Top-edge ribbon — a 2px highlight that gives the bar volume.
+            drawLine(
+                color = interval.color.lighten(0.6f).copy(alpha = 0.9f * dim),
+                start = androidx.compose.ui.geometry.Offset(topLeft.x + 1f, topLeft.y + 1.5f),
+                end = androidx.compose.ui.geometry.Offset(topLeft.x + blockWidth - 1f, topLeft.y + 1.5f),
+                strokeWidth = 2f
+            )
+
+            if (isActive) {
+                // Bright outline marks the live interval; matches the preview's selection look.
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.85f),
+                    topLeft = topLeft,
+                    size = blockSize,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerPx, cornerPx),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                )
+            }
             cumulativeSeconds += interval.durationSeconds.toFloat()
         }
 
