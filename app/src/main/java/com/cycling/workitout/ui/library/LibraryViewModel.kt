@@ -48,16 +48,26 @@ class LibraryViewModel(
     private val _selectedWorkout = MutableStateFlow<WorkoutDefinition?>(null)
     val selectedWorkout: StateFlow<WorkoutDefinition?> = _selectedWorkout.asStateFlow()
 
+    private val _intensityScale = MutableStateFlow(1.0f)
+    val intensityScale: StateFlow<Float> = _intensityScale.asStateFlow()
+
     fun selectSavedWorkout(entity: SavedWorkout) {
+        _intensityScale.value = 1.0f
         _selectedWorkout.value = entity.toWorkoutDefinition(ftp.value).withFtp(ftp.value)
     }
 
     fun selectDefaultWorkout(workout: WorkoutDefinition) {
+        _intensityScale.value = 1.0f
         _selectedWorkout.value = workout
     }
 
     fun dismissPreview() {
         _selectedWorkout.value = null
+    }
+
+    fun adjustIntensity(delta: Int) {
+        val newPercent = (_intensityScale.value * 100f).toInt() + delta
+        _intensityScale.value = newPercent.coerceIn(70, 130) / 100f
     }
 
     fun deleteWorkout(entity: SavedWorkout) {

@@ -78,7 +78,9 @@ import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.scaledByIntensity
 import com.cycling.workitout.ui.components.DevicePairingDialog
+import com.cycling.workitout.ui.components.IntensityPill
 import com.cycling.workitout.ui.components.WorkoutPreviewChart
+import com.cycling.workitout.ui.components.WorkoutPreviewSheet
 import com.cycling.workitout.ui.components.WorkoutRecoveryDialog
 import com.cycling.workitout.ui.components.rememberBlePermissionState
 import timber.log.Timber
@@ -371,8 +373,6 @@ private fun HomeScreenContent(
             onRegenerate = onRegenerate,
             onSave = onSaveWorkoutToLibrary,
             onStart = {
-                // Apply intensity scale before handing off — the trainer/UI downstream
-                // gets a self-contained workout with the user's adjustments baked in.
                 val scaled = state.preview.scaledByIntensity(state.intensityScale)
                 onDismissPreview()
                 onStartWorkout(scaled)
@@ -457,184 +457,6 @@ private fun CustomPromptDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WorkoutPreviewSheet(
-    workout: WorkoutDefinition,
-    intensityScale: Float,
-    isGenerating: Boolean,
-    displayAsPercent: Boolean,
-    onAdjustIntensity: (Int) -> Unit,
-    onRegenerate: () -> Unit,
-    onSave: () -> Unit,
-    onStart: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    // Local "saved" flag — flips to filled-heart on first tap. Resets implicitly when
-    // a new workout is generated because the sheet is keyed on `workout.id`.
-    var saved by remember(workout.id) { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
-        // Show intervals with the user's intensity adjustment baked in so the chart
-        // reflects exactly what will be ridden.
-        val displayWorkout = remember(workout, intensityScale) {
-            workout.scaledByIntensity(intensityScale)
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Header — name on the left, regenerate button on the right.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    workout.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(
-                    onClick = {
-                        if (!saved) {
-                            onSave()
-                            saved = true
-                        }
-                    },
-                    enabled = !isGenerating,
-                ) {
-                    Icon(
-                        if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = if (saved) "Saved to library" else "Save to library",
-                        tint = if (saved) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(
-                    onClick = onRegenerate,
-                    enabled = !isGenerating,
-                ) {
-                    if (isGenerating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.Cached,
-                            contentDescription = "Regenerate workout",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-
-            // Interactive bar chart — the centerpiece. Tap/drag to scrub.
-            WorkoutPreviewChart(
-                intervals = displayWorkout.intervals,
-                displayAsPercent = displayAsPercent,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            // Description — capped to 3 lines so the sheet stays no-scroll.
-            if (workout.description.isNotBlank()) {
-                Text(
-                    workout.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            // Intensity pill — −/+ steps of 5%, clamped 70%–130%.
-            IntensityPill(
-                scale = intensityScale,
-                onAdjust = onAdjustIntensity,
-            )
-
-            // Sticky action row.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Discard") }
-                Button(
-                    onClick = onStart,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Start")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IntensityPill(
-    scale: Float,
-    onAdjust: (Int) -> Unit,
-) {
-    val percent = (scale * 100f).roundToInt()
-    val accent = when {
-        percent > 100 -> MaterialTheme.colorScheme.tertiary
-        percent < 100 -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            "Intensity",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 1.dp,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onAdjust(-5) }) {
-                    Icon(Icons.Default.Remove, contentDescription = "Decrease intensity")
-                }
-                Text(
-                    "$percent%",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = accent,
-                    modifier = Modifier
-                        .widthIn(min = 56.dp)
-                        .padding(horizontal = 4.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-                IconButton(onClick = { onAdjust(5) }) {
-                    Icon(Icons.Default.Add, contentDescription = "Increase intensity")
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun ConnectionStatusChip(

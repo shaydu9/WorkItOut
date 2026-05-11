@@ -29,6 +29,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutIntervalDef
 import com.cycling.workitout.data.firestore.SavedWorkout
+import com.cycling.workitout.data.scaledByIntensity
+import com.cycling.workitout.ui.components.WorkoutPreviewSheet
 import com.cycling.workitout.ui.home.toWorkoutDefinition
 import kotlin.math.roundToInt
 
@@ -49,6 +51,7 @@ fun LibraryScreen(
     val defaultWorkouts by viewModel.defaultWorkouts.collectAsStateWithLifecycle()
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
     val currentFtp by viewModel.ftp.collectAsStateWithLifecycle()
+    val intensityScale by viewModel.intensityScale.collectAsStateWithLifecycle()
 
     var deleteTarget by remember { mutableStateOf<SavedWorkout?>(null) }
 
@@ -71,6 +74,7 @@ fun LibraryScreen(
             savedWorkouts = savedWorkouts,
             defaultWorkouts = defaultWorkouts,
             selectedWorkout = selectedWorkout,
+            intensityScale = intensityScale,
             displayAsPercent = displayAsPercent,
             currentFtp = currentFtp,
             savedIds = savedIds,
@@ -80,6 +84,7 @@ fun LibraryScreen(
             onSaveDefault = viewModel::saveToLibrary,
             onSelectSaved = viewModel::selectSavedWorkout,
             onDeleteSaved = viewModel::deleteWorkout,
+            onAdjustIntensity = viewModel::adjustIntensity,
             onToggleDisplay = viewModel::setDisplayAsPercent,
             onDismissPreview = viewModel::dismissPreview,
             onStartWorkout = onStartWorkout,
@@ -93,6 +98,7 @@ private fun LibraryScreenContent(
     savedWorkouts: List<SavedWorkout>,
     defaultWorkouts: List<WorkoutDefinition>,
     selectedWorkout: WorkoutDefinition?,
+    intensityScale: Float,
     displayAsPercent: Boolean,
     currentFtp: Int,
     savedIds: Set<String>,
@@ -102,6 +108,7 @@ private fun LibraryScreenContent(
     onSaveDefault: (WorkoutDefinition) -> Unit,
     onSelectSaved: (SavedWorkout) -> Unit,
     onDeleteSaved: (SavedWorkout) -> Unit,
+    onAdjustIntensity: (Int) -> Unit,
     onToggleDisplay: (Boolean) -> Unit,
     onDismissPreview: () -> Unit,
     onStartWorkout: (WorkoutDefinition) -> Unit,
@@ -175,15 +182,20 @@ private fun LibraryScreenContent(
     }
 
     if (selectedWorkout != null) {
-        LibraryPreviewSheet(
+        WorkoutPreviewSheet(
             workout = selectedWorkout,
+            intensityScale = intensityScale,
+            isGenerating = false,
             displayAsPercent = displayAsPercent,
-            onToggleDisplay = onToggleDisplay,
+            onAdjustIntensity = onAdjustIntensity,
+            onRegenerate = null,
+            onSave = null,
             onStart = {
+                val scaled = selectedWorkout.scaledByIntensity(intensityScale)
                 onDismissPreview()
-                onStartWorkout(selectedWorkout)
+                onStartWorkout(scaled)
             },
-            onDismiss = onDismissPreview
+            onDismiss = onDismissPreview,
         )
     }
 
@@ -361,123 +373,6 @@ private fun ZoneStrip(workout: WorkoutDefinition) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun LibraryPreviewSheet(
-    workout: WorkoutDefinition,
-    displayAsPercent: Boolean,
-    onToggleDisplay: (Boolean) -> Unit,
-    onStart: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    workout.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                WattsPercentToggle(
-                    asPercent = displayAsPercent,
-                    onChange = onToggleDisplay
-                )
-            }
-
-            val totalMin = workout.totalDurationSeconds / 60
-            Text(
-                "${totalMin} min · ${workout.intervals.size} intervals",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (workout.description.isNotBlank()) {
-                Text(workout.description, style = MaterialTheme.typography.bodyMedium)
-            }
-
-            HorizontalDivider()
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                workout.intervals.forEach { interval ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                color = Color(interval.zone.colorHex).copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 4.dp, height = 28.dp)
-                                .background(Color(interval.zone.colorHex), RoundedCornerShape(2.dp))
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                interval.name,
-                                fontWeight = FontWeight.Medium,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                interval.zone.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        val mins = interval.durationSeconds / 60
-                        val secs = interval.durationSeconds % 60
-                        Text(
-                            "%d:%02d".format(mins, secs),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(end = 12.dp)
-                        )
-                        Text(
-                            formatTarget(interval, displayAsPercent),
-                            fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f)
-                ) { Text("Close") }
-                Button(
-                    onClick = onStart,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Start")
-                }
-            }
-        }
-    }
-}
 
 // W | % segmented chip — shared by the library, home, and active workout screens.
 @Composable
