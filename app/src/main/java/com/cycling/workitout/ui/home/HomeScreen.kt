@@ -369,6 +369,7 @@ private fun HomeScreenContent(
             displayAsPercent = displayAsPercent,
             onAdjustIntensity = onAdjustIntensity,
             onRegenerate = onRegenerate,
+            onSave = onSaveWorkoutToLibrary,
             onStart = {
                 // Apply intensity scale before handing off — the trainer/UI downstream
                 // gets a self-contained workout with the user's adjustments baked in.
@@ -465,9 +466,13 @@ private fun WorkoutPreviewSheet(
     displayAsPercent: Boolean,
     onAdjustIntensity: (Int) -> Unit,
     onRegenerate: () -> Unit,
+    onSave: () -> Unit,
     onStart: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Local "saved" flag — flips to filled-heart on first tap. Resets implicitly when
+    // a new workout is generated because the sheet is keyed on `workout.id`.
+    var saved by remember(workout.id) { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -501,7 +506,23 @@ private fun WorkoutPreviewSheet(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        if (!saved) {
+                            onSave()
+                            saved = true
+                        }
+                    },
+                    enabled = !isGenerating,
+                ) {
+                    Icon(
+                        if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (saved) "Saved to library" else "Save to library",
+                        tint = if (saved) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 IconButton(
                     onClick = onRegenerate,
                     enabled = !isGenerating,
