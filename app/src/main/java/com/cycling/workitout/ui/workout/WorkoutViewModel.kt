@@ -30,8 +30,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlinx.serialization.Serializable
@@ -389,18 +391,23 @@ class WorkoutViewModel(
 
         _exportState.value = ExportState.InProgress
         viewModelScope.launch {
-            try {
-                val file = WorkoutExporter.exportToFit(
-                    context = context.applicationContext,
-                    workout = workout,
-                    startEpochMillis = startedAt,
-                    records = records
-                )
-                _exportState.value = ExportState.Ready(file)
-                Timber.tag("FIT_EXPORT").i("Workout auto-exported to ${file.absolutePath}")
-            } catch (t: Throwable) {
-                Timber.tag("FIT_EXPORT").e(t, "Failed to export .fit")
-                _exportState.value = ExportState.Failed(t.message ?: "Export failed")
+            // NonCancellable: the ViewModel may be cleared (and viewModelScope cancelled) before
+            // the file write finishes, but ExportState must reach Ready/Failed so that the
+            // saveRideToHistory wait can unblock and trigger the Strava auto-upload.
+            withContext(NonCancellable) {
+                try {
+                    val file = WorkoutExporter.exportToFit(
+                        context = context.applicationContext,
+                        workout = workout,
+                        startEpochMillis = startedAt,
+                        records = records
+                    )
+                    _exportState.value = ExportState.Ready(file)
+                    Timber.tag("FIT_EXPORT").i("Workout auto-exported to ${file.absolutePath}")
+                } catch (t: Throwable) {
+                    Timber.tag("FIT_EXPORT").e(t, "Failed to export .fit")
+                    _exportState.value = ExportState.Failed(t.message ?: "Export failed")
+                }
             }
         }
     }
@@ -421,74 +428,79 @@ class WorkoutViewModel(
         rideSaved = true
 
         viewModelScope.launch {
-            try {
-                val ftp = WorkItOutApplication.userProfileRepository.profile.value.ftpWatts
-                val powers = records.map { it.actualPower }
-                val avgPower = powers.average().toInt()
-                val maxPower = powers.max()
-                val avgHr = records.map { it.heartRate }.average().toInt()
-                val maxHr = records.maxOf { it.heartRate }
-                val avgCadence = records.map { it.cadence }.average().toInt()
+            // NonCancellable: the ViewModel may be cleared before this completes (e.g. user
+            // navigates away immediately after the workout ends). The Firestore save and
+            // Strava auto-upload must not be interrupted by viewModelScope cancellation.
+            withContext(NonCancellable) {
+                try {
+                    val ftp = WorkItOutApplication.userProfileRepository.profile.value.ftpWatts
+                    val powers = records.map { it.actualPower }
+                    val avgPower = powers.average().toInt()
+                    val maxPower = powers.max()
+                    val avgHr = records.map { it.heartRate }.average().toInt()
+                    val maxHr = records.maxOf { it.heartRate }
+                    val avgCadence = records.map { it.cadence }.average().toInt()
 
-                val np = computeNormalizedPower(powers)
-                val durationSec = records.lastOrNull()?.timeSeconds ?: 0
+                    val np = computeNormalizedPower(powers)
+                    val durationSec = records.lastOrNull()?.timeSeconds ?: 0
 
-                // Collapse to 1 Hz: the recorder emits several rows per second (sensors
-                // arrive at different rates), but the detail chart's X-axis is whole seconds,
-                // so duplicate-second rows would just inflate the Firestore payload past its
-                // 1 MB per-field cap. Averaging within each second is lossless for the chart.
-                val compactPoints = records
-                    .groupBy { it.timeSeconds }
-                    .entries
-                    .sortedBy { it.key }
-                    .map { (second, group) ->
-                        CompactDataPoint(
-                            t = second,
-                            p = group.map { it.actualPower }.average().roundToInt(),
-                            tp = group.last().targetPower,
-                            hr = group.map { it.heartRate }.average().roundToInt(),
-                            c = group.map { it.cadence }.average().roundToInt(),
-                        )
-                    }
-                val json = Json.encodeToString(compactPoints)
-
-                val entity = Ride(
-                    name = workout.name,
-                    startedAtMillis = startedAt,
-                    durationSeconds = durationSec,
-                    avgPowerWatts = avgPower,
-                    maxPowerWatts = maxPower,
-                    avgHeartRate = avgHr,
-                    maxHeartRate = maxHr,
-                    avgCadence = avgCadence,
-                    normalizedPowerWatts = np,
-                    ftpWatts = ftp,
-                    dataPointsJson = json
-                )
-                val newId = WorkItOutApplication.rideRepository.saveRide(entity)
-                checkpointStore.clear()
-                _savedRideId.value = newId
-                Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
-
-                val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
-                if (autoUpload && stravaRepository.isConnected.value) {
-                    // Wait for the .fit export before uploading — otherwise OkHttp sends a partial file.
-                    Timber.tag("WORKOUT").i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
-                    val terminal = withTimeoutOrNull(30_000L) {
-                        exportState.first {
-                            it is ExportState.Ready || it is ExportState.Failed
+                    // Collapse to 1 Hz: the recorder emits several rows per second (sensors
+                    // arrive at different rates), but the detail chart's X-axis is whole seconds,
+                    // so duplicate-second rows would just inflate the Firestore payload past its
+                    // 1 MB per-field cap. Averaging within each second is lossless for the chart.
+                    val compactPoints = records
+                        .groupBy { it.timeSeconds }
+                        .entries
+                        .sortedBy { it.key }
+                        .map { (second, group) ->
+                            CompactDataPoint(
+                                t = second,
+                                p = group.map { it.actualPower }.average().roundToInt(),
+                                tp = group.last().targetPower,
+                                hr = group.map { it.heartRate }.average().roundToInt(),
+                                c = group.map { it.cadence }.average().roundToInt(),
+                            )
                         }
+                    val json = Json.encodeToString(compactPoints)
+
+                    val entity = Ride(
+                        name = workout.name,
+                        startedAtMillis = startedAt,
+                        durationSeconds = durationSec,
+                        avgPowerWatts = avgPower,
+                        maxPowerWatts = maxPower,
+                        avgHeartRate = avgHr,
+                        maxHeartRate = maxHr,
+                        avgCadence = avgCadence,
+                        normalizedPowerWatts = np,
+                        ftpWatts = ftp,
+                        dataPointsJson = json
+                    )
+                    val newId = WorkItOutApplication.rideRepository.saveRide(entity)
+                    checkpointStore.clear()
+                    _savedRideId.value = newId
+                    Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
+
+                    val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
+                    if (autoUpload && stravaRepository.isConnected.value) {
+                        // Wait for the .fit export before uploading — otherwise OkHttp sends a partial file.
+                        Timber.tag("WORKOUT").i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
+                        val terminal = withTimeoutOrNull(30_000L) {
+                            exportState.first {
+                                it is ExportState.Ready || it is ExportState.Failed
+                            }
+                        }
+                        if (terminal is ExportState.Failed) {
+                            Timber.tag("WORKOUT").w("Silent export failed — auto-upload will regenerate the .fit")
+                        } else if (terminal == null) {
+                            Timber.tag("WORKOUT").w("Timed out waiting for .fit export; uploader will regenerate")
+                        }
+                        Timber.tag("WORKOUT").i("Kicking history upload for ride $newId")
+                        WorkItOutApplication.historyStravaUploader.upload(newId)
                     }
-                    if (terminal is ExportState.Failed) {
-                        Timber.tag("WORKOUT").w("Silent export failed — auto-upload will regenerate the .fit")
-                    } else if (terminal == null) {
-                        Timber.tag("WORKOUT").w("Timed out waiting for .fit export; uploader will regenerate")
-                    }
-                    Timber.tag("WORKOUT").i("Kicking history upload for ride $newId")
-                    WorkItOutApplication.historyStravaUploader.upload(newId)
+                } catch (t: Throwable) {
+                    Timber.tag("WORKOUT").e(t, "Failed to save ride to history")
                 }
-            } catch (t: Throwable) {
-                Timber.tag("WORKOUT").e(t, "Failed to save ride to history")
             }
         }
     }
