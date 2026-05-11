@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.WorkoutState
+import com.cycling.workitout.data.export.ExportState
 import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.ui.components.PowerDataPoint
 import com.cycling.workitout.ui.components.WorkoutInterval
@@ -121,7 +122,7 @@ private fun WorkoutScreenContent(
     intensityPercent: Int,
     onIntensityDelta: (Int) -> Unit,
     startupState: WorkoutViewModel.StartupState,
-    exportState: WorkoutViewModel.ExportState,
+    exportState: ExportState,
     stravaConnected: Boolean,
     stravaUploadState: StravaRepository.UploadState,
     workoutIntervals: List<WorkoutInterval>,
@@ -680,7 +681,7 @@ private fun ControlBar(
     onResume: () -> Unit,
     onStopRequested: () -> Unit,
     onBack: () -> Unit,
-    exportState: WorkoutViewModel.ExportState = WorkoutViewModel.ExportState.Idle,
+    exportState: ExportState = ExportState.Idle,
     stravaConnected: Boolean = false,
     stravaUploadState: StravaRepository.UploadState = StravaRepository.UploadState.Idle,
     onUploadToStrava: () -> Unit = {}
@@ -760,9 +761,9 @@ private fun ControlBar(
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
-                val isExporting = exportState is WorkoutViewModel.ExportState.InProgress
-                val exportFailed = exportState is WorkoutViewModel.ExportState.Failed
-                val isReady = exportState is WorkoutViewModel.ExportState.Ready
+                val isExporting = exportState is ExportState.InProgress
+                val exportFailed = exportState is ExportState.Failed
+                val isReady = exportState is ExportState.Ready
                 val isUploading = stravaUploadState is StravaRepository.UploadState.Uploading
                 val uploadSucceeded = stravaUploadState is StravaRepository.UploadState.Success
                 val uploadFailed = stravaUploadState is StravaRepository.UploadState.Failed
