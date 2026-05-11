@@ -4,6 +4,7 @@ import android.content.Context
 import com.cycling.workitout.data.export.WorkoutExporter
 import com.cycling.workitout.data.firestore.RideRepository
 import com.cycling.workitout.data.preferences.ThemePreferences
+import com.cycling.workitout.data.export.ExportState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 // Per-ride upload state so history uploads don't clobber the live workout screen's state.
@@ -95,6 +97,23 @@ class HistoryStravaUploader(
                     flow.value = UploadState.Failed(t.message ?: "Upload failed")
                 }
             }
+        }
+    }
+
+    fun scheduleAutoUpload(rideId: String, fitExportState: StateFlow<ExportState>) {
+        scope.launch {
+            val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
+            if (!autoUpload) return@launch
+
+            val terminal = withTimeoutOrNull(30_000L) {
+                fitExportState.first { it is ExportState.Ready || it is ExportState.Failed }
+            }
+            if (terminal is ExportState.Failed) {
+                Timber.tag("STRAVA").w("Export failed — uploader will regenerate .fit for $rideId")
+            } else if (terminal == null) {
+                Timber.tag("STRAVA").w("Export timed out — uploader will regenerate .fit for $rideId")
+            }
+            upload(rideId)
         }
     }
 

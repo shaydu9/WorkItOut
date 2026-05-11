@@ -6,22 +6,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
-import com.cycling.workitout.service.WorkoutForegroundService
 import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.WorkoutState
 import com.cycling.workitout.data.database.ActiveWorkoutEntity
-import com.cycling.workitout.data.firestore.Ride
+import com.cycling.workitout.data.export.ExportState
 import com.cycling.workitout.data.export.WorkoutExporter
+import com.cycling.workitout.data.firestore.Ride
 import com.cycling.workitout.data.preferences.ThemePreferences
 import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.data.workout.WorkoutCheckpointStore
+import com.cycling.workitout.service.WorkoutForegroundService
 import com.cycling.workitout.ui.components.WorkoutInterval
 import com.cycling.workitout.workout.VirtualSpeedEstimator
 import com.cycling.workitout.workout.WorkoutEngine
 import com.cycling.workitout.workout.WorkoutRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,20 +32,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.abs
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import timber.log.Timber
-import java.io.File
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 class WorkoutViewModel(
     private val bleManager: BleManager,
@@ -66,7 +63,7 @@ class WorkoutViewModel(
     init {
         Timber.tag("ERG").d(
             "WorkoutViewModel init: vm=${System.identityHashCode(this)} " +
-            "token=${System.identityHashCode(ergToken)}"
+                    "token=${System.identityHashCode(ergToken)}"
         )
     }
 
@@ -113,7 +110,11 @@ class WorkoutViewModel(
     /** User's current FTP — used to compute live power as a %-FTP on the active-workout UI. */
     val currentFtp: StateFlow<Int> = WorkItOutApplication.userProfileRepository.profile
         .map { it.ftpWatts }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreferences.DEFAULT_FTP_WATTS)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            ThemePreferences.DEFAULT_FTP_WATTS
+        )
 
     fun setDisplayAsPercent(asPercent: Boolean) {
         viewModelScope.launch { themePreferences.setDisplayTargetsAsPercent(asPercent) }
@@ -143,7 +144,8 @@ class WorkoutViewModel(
 
     // Wall-clock of last interval transition — watchdog suppresses near boundaries while the
     // trainer ramps to the new target.
-    @Volatile private var lastIntervalTransitionMs: Long = 0L
+    @Volatile
+    private var lastIntervalTransitionMs: Long = 0L
 
     // Sliding window of recent re-arm timestamps — caps the watchdog at MAX_REARMS_PER_30S.
     private val rearmTimestamps = ArrayDeque<Long>()
@@ -154,16 +156,10 @@ class WorkoutViewModel(
         object Waiting : StartupState()
         data class Counting(val secondsLeft: Int) : StartupState()
     }
+
     private val _startupState = MutableStateFlow<StartupState>(StartupState.Idle)
     val startupState: StateFlow<StartupState> = _startupState.asStateFlow()
 
-    /** UI state for the post-workout .fit export. */
-    sealed class ExportState {
-        object Idle : ExportState()
-        object InProgress : ExportState()
-        data class Ready(val file: File) : ExportState()
-        data class Failed(val message: String) : ExportState()
-    }
     private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
@@ -241,7 +237,8 @@ class WorkoutViewModel(
                 if (firstTarget > 0) {
                     bleManager.requestFtmsControl(ergToken)
                     bleManager.setTargetPower(ergToken, scaledTarget(firstTarget))
-                    Timber.tag("ERG").i("Pre-sent first interval target ${scaledTarget(firstTarget)} W on screen entry")
+                    Timber.tag("ERG")
+                        .i("Pre-sent first interval target ${scaledTarget(firstTarget)} W on screen entry")
                 }
             }
         }
@@ -264,13 +261,16 @@ class WorkoutViewModel(
         viewModelScope.launch {
             workoutEngine.progress.collect { progress ->
                 if (progress.workoutState == WorkoutState.RUNNING ||
-                    progress.workoutState == WorkoutState.PAUSED) {
+                    progress.workoutState == WorkoutState.PAUSED
+                ) {
                     val totalSec = progress.totalElapsedSeconds
                     val h = totalSec / 3600
                     val m = (totalSec % 3600) / 60
                     val s = totalSec % 60
-                    val elapsed = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
-                    val target = if (progress.targetPowerWatts > 0) "${progress.targetPowerWatts}W" else ""
+                    val elapsed =
+                        if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+                    val target =
+                        if (progress.targetPowerWatts > 0) "${progress.targetPowerWatts}W" else ""
                     WorkoutForegroundService.update(appContext, elapsed, target)
                 }
             }
@@ -285,7 +285,8 @@ class WorkoutViewModel(
                 val firstTarget = workoutEngine.progress.value.targetPowerWatts
                 if (firstTarget > 0) {
                     bleManager.setTargetPower(ergToken, scaledTarget(firstTarget))
-                    Timber.tag("ERG").i("Startup: reopened burst for first target ${scaledTarget(firstTarget)} W")
+                    Timber.tag("ERG")
+                        .i("Startup: reopened burst for first target ${scaledTarget(firstTarget)} W")
                 }
             }
             runStartupCountdown()
@@ -309,7 +310,8 @@ class WorkoutViewModel(
                     cadenceFlow.first { it == 0 }
                 }
                 if (stopped != null) {
-                    Timber.tag("ERG").i("Startup countdown aborted at $sec — rider stopped pedaling")
+                    Timber.tag("ERG")
+                        .i("Startup countdown aborted at $sec — rider stopped pedaling")
                     aborted = true
                     break
                 }
@@ -321,7 +323,8 @@ class WorkoutViewModel(
     // Auto-pause: cadence stayed at 0 for AUTO_PAUSE_AFTER_SEC. We track who triggered the
     // pause so we only auto-resume on pedaling if WE paused — a manual pause stays paused
     // until the user resumes.
-    @Volatile private var autoPaused = false
+    @Volatile
+    private var autoPaused = false
 
     private suspend fun runAutoPauseWatchdog() {
         var zeroCadenceSec = 0
@@ -336,13 +339,15 @@ class WorkoutViewModel(
                         if (zeroCadenceSec >= AUTO_PAUSE_AFTER_SEC) {
                             autoPaused = true
                             workoutEngine.pause()
-                            Timber.tag("WORKOUT").i("Auto-paused: cadence 0 for ${AUTO_PAUSE_AFTER_SEC}s")
+                            Timber.tag("WORKOUT")
+                                .i("Auto-paused: cadence 0 for ${AUTO_PAUSE_AFTER_SEC}s")
                             zeroCadenceSec = 0
                         }
                     } else {
                         zeroCadenceSec = 0
                     }
                 }
+
                 WorkoutState.PAUSED -> {
                     zeroCadenceSec = 0
                     if (autoPaused && cadence > 0) {
@@ -351,6 +356,7 @@ class WorkoutViewModel(
                         Timber.tag("WORKOUT").i("Auto-resumed: pedaling detected")
                     }
                 }
+
                 else -> {
                     zeroCadenceSec = 0
                     autoPaused = false
@@ -371,14 +377,21 @@ class WorkoutViewModel(
         }
     }
 
-    fun pauseWorkout() { autoPaused = false; workoutEngine.pause() }
-    fun resumeWorkout() { autoPaused = false; workoutEngine.resume() }
+    fun pauseWorkout() {
+        autoPaused = false; workoutEngine.pause()
+    }
+
+    fun resumeWorkout() {
+        autoPaused = false; workoutEngine.resume()
+    }
+
     fun stopWorkout() = workoutEngine.stop()
 
     // Idempotent — skips if already written this session.
     fun exportFitSilently(context: Context) {
         if (_exportState.value is ExportState.Ready ||
-            _exportState.value is ExportState.InProgress) return
+            _exportState.value is ExportState.InProgress
+        ) return
 
         val workout = workoutEngine.workoutDefinition
         val startedAt = workoutEngine.workoutStartEpochMillis
@@ -391,24 +404,20 @@ class WorkoutViewModel(
 
         _exportState.value = ExportState.InProgress
         viewModelScope.launch {
-            // NonCancellable: the ViewModel may be cleared (and viewModelScope cancelled) before
-            // the file write finishes, but ExportState must reach Ready/Failed so that the
-            // saveRideToHistory wait can unblock and trigger the Strava auto-upload.
-            withContext(NonCancellable) {
-                try {
-                    val file = WorkoutExporter.exportToFit(
-                        context = context.applicationContext,
-                        workout = workout,
-                        startEpochMillis = startedAt,
-                        records = records
-                    )
-                    _exportState.value = ExportState.Ready(file)
-                    Timber.tag("FIT_EXPORT").i("Workout auto-exported to ${file.absolutePath}")
-                } catch (t: Throwable) {
-                    Timber.tag("FIT_EXPORT").e(t, "Failed to export .fit")
-                    _exportState.value = ExportState.Failed(t.message ?: "Export failed")
-                }
+            try {
+                val file = WorkoutExporter.exportToFit(
+                    context = context.applicationContext,
+                    workout = workout,
+                    startEpochMillis = startedAt,
+                    records = records
+                )
+                _exportState.value = ExportState.Ready(file)
+                Timber.tag("FIT_EXPORT").i("Workout auto-exported to ${file.absolutePath}")
+            } catch (t: Throwable) {
+                Timber.tag("FIT_EXPORT").e(t, "Failed to export .fit")
+                _exportState.value = ExportState.Failed(t.message ?: "Export failed")
             }
+
         }
     }
 
@@ -428,79 +437,58 @@ class WorkoutViewModel(
         rideSaved = true
 
         viewModelScope.launch {
-            // NonCancellable: the ViewModel may be cleared before this completes (e.g. user
-            // navigates away immediately after the workout ends). The Firestore save and
-            // Strava auto-upload must not be interrupted by viewModelScope cancellation.
-            withContext(NonCancellable) {
-                try {
-                    val ftp = WorkItOutApplication.userProfileRepository.profile.value.ftpWatts
-                    val powers = records.map { it.actualPower }
-                    val avgPower = powers.average().toInt()
-                    val maxPower = powers.max()
-                    val avgHr = records.map { it.heartRate }.average().toInt()
-                    val maxHr = records.maxOf { it.heartRate }
-                    val avgCadence = records.map { it.cadence }.average().toInt()
+            try {
+                val ftp = WorkItOutApplication.userProfileRepository.profile.value.ftpWatts
+                val powers = records.map { it.actualPower }
+                val avgPower = powers.average().toInt()
+                val maxPower = powers.max()
+                val avgHr = records.map { it.heartRate }.average().toInt()
+                val maxHr = records.maxOf { it.heartRate }
+                val avgCadence = records.map { it.cadence }.average().toInt()
 
-                    val np = computeNormalizedPower(powers)
-                    val durationSec = records.lastOrNull()?.timeSeconds ?: 0
+                val np = computeNormalizedPower(powers)
+                val durationSec = records.lastOrNull()?.timeSeconds ?: 0
 
-                    // Collapse to 1 Hz: the recorder emits several rows per second (sensors
-                    // arrive at different rates), but the detail chart's X-axis is whole seconds,
-                    // so duplicate-second rows would just inflate the Firestore payload past its
-                    // 1 MB per-field cap. Averaging within each second is lossless for the chart.
-                    val compactPoints = records
-                        .groupBy { it.timeSeconds }
-                        .entries
-                        .sortedBy { it.key }
-                        .map { (second, group) ->
-                            CompactDataPoint(
-                                t = second,
-                                p = group.map { it.actualPower }.average().roundToInt(),
-                                tp = group.last().targetPower,
-                                hr = group.map { it.heartRate }.average().roundToInt(),
-                                c = group.map { it.cadence }.average().roundToInt(),
-                            )
-                        }
-                    val json = Json.encodeToString(compactPoints)
-
-                    val entity = Ride(
-                        name = workout.name,
-                        startedAtMillis = startedAt,
-                        durationSeconds = durationSec,
-                        avgPowerWatts = avgPower,
-                        maxPowerWatts = maxPower,
-                        avgHeartRate = avgHr,
-                        maxHeartRate = maxHr,
-                        avgCadence = avgCadence,
-                        normalizedPowerWatts = np,
-                        ftpWatts = ftp,
-                        dataPointsJson = json
-                    )
-                    val newId = WorkItOutApplication.rideRepository.saveRide(entity)
-                    checkpointStore.clear()
-                    _savedRideId.value = newId
-                    Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
-
-                    val autoUpload = themePreferences.autoUploadToStravaOnFinish.first()
-                    if (autoUpload && stravaRepository.isConnected.value) {
-                        // Wait for the .fit export before uploading — otherwise OkHttp sends a partial file.
-                        Timber.tag("WORKOUT").i("Auto-upload enabled — waiting for .fit export to finish for ride $newId")
-                        val terminal = withTimeoutOrNull(30_000L) {
-                            exportState.first {
-                                it is ExportState.Ready || it is ExportState.Failed
-                            }
-                        }
-                        if (terminal is ExportState.Failed) {
-                            Timber.tag("WORKOUT").w("Silent export failed — auto-upload will regenerate the .fit")
-                        } else if (terminal == null) {
-                            Timber.tag("WORKOUT").w("Timed out waiting for .fit export; uploader will regenerate")
-                        }
-                        Timber.tag("WORKOUT").i("Kicking history upload for ride $newId")
-                        WorkItOutApplication.historyStravaUploader.upload(newId)
+                // Collapse to 1 Hz: the recorder emits several rows per second (sensors
+                // arrive at different rates), but the detail chart's X-axis is whole seconds,
+                // so duplicate-second rows would just inflate the Firestore payload past its
+                // 1 MB per-field cap. Averaging within each second is lossless for the chart.
+                val compactPoints = records
+                    .groupBy { it.timeSeconds }
+                    .entries
+                    .sortedBy { it.key }
+                    .map { (second, group) ->
+                        CompactDataPoint(
+                            t = second,
+                            p = group.map { it.actualPower }.average().roundToInt(),
+                            tp = group.last().targetPower,
+                            hr = group.map { it.heartRate }.average().roundToInt(),
+                            c = group.map { it.cadence }.average().roundToInt(),
+                        )
                     }
-                } catch (t: Throwable) {
-                    Timber.tag("WORKOUT").e(t, "Failed to save ride to history")
-                }
+                val json = Json.encodeToString(compactPoints)
+
+                val entity = Ride(
+                    name = workout.name,
+                    startedAtMillis = startedAt,
+                    durationSeconds = durationSec,
+                    avgPowerWatts = avgPower,
+                    maxPowerWatts = maxPower,
+                    avgHeartRate = avgHr,
+                    maxHeartRate = maxHr,
+                    avgCadence = avgCadence,
+                    normalizedPowerWatts = np,
+                    ftpWatts = ftp,
+                    dataPointsJson = json
+                )
+                val newId = WorkItOutApplication.rideRepository.saveRide(entity)
+                checkpointStore.clear()
+                _savedRideId.value = newId
+                Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
+
+                WorkItOutApplication.historyStravaUploader.scheduleAutoUpload(newId, exportState)
+            } catch (t: Throwable) {
+                Timber.tag("WORKOUT").e(t, "Failed to save ride to history")
             }
         }
     }
@@ -525,7 +513,9 @@ class WorkoutViewModel(
         while (true) {
             delay(1_000L)
 
-            if (!_ergEnabled.value) { consecutiveDeviationSec = 0; continue }
+            if (!_ergEnabled.value) {
+                consecutiveDeviationSec = 0; continue
+            }
             if (workoutEngine.progress.value.workoutState != WorkoutState.RUNNING) {
                 consecutiveDeviationSec = 0; continue
             }
@@ -536,10 +526,14 @@ class WorkoutViewModel(
             }
 
             val target = scaledTarget(workoutEngine.progress.value.targetPowerWatts)
-            if (target <= 0) { consecutiveDeviationSec = 0; continue }
+            if (target <= 0) {
+                consecutiveDeviationSec = 0; continue
+            }
 
             val live = bleManager.powerData.value
-            if (live.cadence < minCadence) { consecutiveDeviationSec = 0; continue }
+            if (live.cadence < minCadence) {
+                consecutiveDeviationSec = 0; continue
+            }
 
             val deviation = abs(live.power - target).toDouble() / target.toDouble()
             if (deviation <= deviationFraction) {
@@ -557,12 +551,14 @@ class WorkoutViewModel(
                 rearmTimestamps.removeFirst()
             }
             if (rearmTimestamps.size >= maxRearmsPer30s) {
-                Timber.tag("ERG").w("ERG watchdog: over budget ($maxRearmsPer30s rearms in 30s) — backing off")
+                Timber.tag("ERG")
+                    .w("ERG watchdog: over budget ($maxRearmsPer30s rearms in 30s) — backing off")
                 consecutiveDeviationSec = 0
                 continue
             }
 
-            Timber.tag("ERG").w("ERG watchdog: actual=${live.power}W target=${target}W (${(deviation * 100).toInt()}% off, ${consecutiveDeviationSec}s) — auto-rearming")
+            Timber.tag("ERG")
+                .w("ERG watchdog: actual=${live.power}W target=${target}W (${(deviation * 100).toInt()}% off, ${consecutiveDeviationSec}s) — auto-rearming")
             rearmTimestamps.addLast(now)
             lastRearmMs = now
             consecutiveDeviationSec = 0
@@ -643,7 +639,8 @@ class WorkoutViewModel(
         bleManager.releaseErgControl(ergToken)
         bleManager.setWorkoutActive(false)
         WorkoutForegroundService.stop(appContext)
-        Timber.tag("ERG").d("WorkoutViewModel cleared (vm=${System.identityHashCode(this)}) — released, engine callbacks unwired")
+        Timber.tag("ERG")
+            .d("WorkoutViewModel cleared (vm=${System.identityHashCode(this)}) — released, engine callbacks unwired")
     }
 
     // When re-enabling ERG, re-acquire control and push the current target immediately.
