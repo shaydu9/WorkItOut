@@ -603,6 +603,49 @@ class BleManager(private val context: Context) {
         }
     }
 
+    // Toggle ERG mode on/off mid-workout. Used by the 20-min FTP test: ERG off during
+    // the measured interval so the rider drives the power, ERG back on for cooldown.
+    //
+    // Off:
+    //   - FTMS: send Set Indoor Bike Simulation Parameters (opcode 0x11) with grade=0.
+    //     Trainer enters sim-mode (flat road, rider sets power). Universal across Wahoo/Elite/Tacx.
+    //   - FE-C: stop the Page 49 resender. Trainer auto-drops ERG after ~5s.
+    //
+    // On: no-op. The next setTargetPower() implicitly resumes ERG on both protocols.
+    fun setErgMode(token: Any, enabled: Boolean) {
+        if (!isCurrentOwner(token)) {
+            Timber.tag("ERG").w(
+                "setErgMode($enabled) dropped — caller token=${System.identityHashCode(token)} not current owner=${
+                    System.identityHashCode(ergOwnerToken)
+                }"
+            )
+            return
+        }
+        if (enabled) {
+            Timber.tag("ERG").d("setErgMode(true) — no-op; next setTargetPower will resume ERG")
+            return
+        }
+        when (_controlMode.value) {
+            ControlMode.FTMS -> {
+                // Opcode 0x11: windSpeed(2) + grade(2) + crr(1) + windDrag(1), all zero = flat road.
+                val data = byteArrayOf(0x11, 0, 0, 0, 0, 0, 0)
+                enqueueControlWrite(data)
+                Timber.tag("ERG").d("FTMS setErgMode(false): sim-mode grade=0 sent")
+            }
+
+            ControlMode.FEC -> {
+                stopFecResender()
+                currentFecTargetWatts = null
+                Timber.tag("ERG")
+                    .d("FE-C setErgMode(false): resender stopped — trainer will drop ERG in ~5s")
+            }
+
+            ControlMode.NONE -> Timber.tag("ERG")
+                .w("setErgMode($enabled) dropped — no control mode")
+        }
+
+    }
+
     private fun enqueueControlWrite(data: ByteArray) {
         when (_controlMode.value) {
             ControlMode.FTMS -> if (ftmsControlPointChar == null || trainerGatt == null) {

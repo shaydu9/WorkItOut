@@ -44,6 +44,8 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
     var onWorkoutStarted: (() -> Unit)? = null
     var onWorkoutStopped: (() -> Unit)? = null
 
+    var onErgModeChanged: ((Boolean) -> Unit)? = null
+
     fun loadWorkout(definition: WorkoutDefinition) {
         workout = definition
         currentIntervalIndex = 0
@@ -88,7 +90,10 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
 
         onWorkoutStarted?.invoke()
         // No intervals = free ride: no target to push to the trainer.
-        w.intervals.firstOrNull()?.let { onTargetPowerChanged?.invoke(it.targetPowerWatts) }
+        w.intervals.firstOrNull()?.let {
+            onTargetPowerChanged?.invoke(it.targetPowerWatts)
+            onErgModeChanged?.invoke(!it.ergDisabled)
+        }
 
         updateProgress(0)
         startTicking()
@@ -226,6 +231,7 @@ class WorkoutEngine(private val coroutineScope: CoroutineScope) {
 
             val newInterval = w.intervals[currentIntervalIndex]
             onTargetPowerChanged?.invoke(newInterval.targetPowerWatts)
+            onErgModeChanged?.invoke(!newInterval.ergDisabled)
             Timber.tag("WORKOUT").i("→ Interval ${currentIntervalIndex + 1}/${w.intervals.size}: ${newInterval.name} @ ${newInterval.targetPowerWatts}W (${newInterval.durationSeconds}s) [${fmtClock(totalElapsed)}]")
         }
 

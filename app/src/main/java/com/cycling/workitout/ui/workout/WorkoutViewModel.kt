@@ -1,11 +1,13 @@
 package com.cycling.workitout.ui.workout
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cycling.workitout.WorkItOutApplication
 import com.cycling.workitout.ble.BleManager
+import com.cycling.workitout.data.FtpTestResult
 import com.cycling.workitout.data.LiveMetrics
 import com.cycling.workitout.data.RecordedDataPoint
 import com.cycling.workitout.data.WorkoutDefinition
@@ -20,6 +22,7 @@ import com.cycling.workitout.data.strava.StravaRepository
 import com.cycling.workitout.data.workout.WorkoutCheckpointStore
 import com.cycling.workitout.service.WorkoutForegroundService
 import com.cycling.workitout.ui.components.WorkoutInterval
+import com.cycling.workitout.workout.FtpEstimator
 import com.cycling.workitout.workout.VirtualSpeedEstimator
 import com.cycling.workitout.workout.WorkoutEngine
 import com.cycling.workitout.workout.WorkoutRepository
@@ -170,6 +173,9 @@ class WorkoutViewModel(
     private val _savedRideId = MutableStateFlow<String?>(null)
     val savedRideId: StateFlow<String?> = _savedRideId.asStateFlow()
 
+    private val _ftpTestResult = MutableStateFlow<FtpTestResult?>(null)
+    val ftpTestResult: StateFlow<FtpTestResult?> = _ftpTestResult.asStateFlow()
+
     init {
         stravaRepository.resetUploadState()
 
@@ -199,6 +205,12 @@ class WorkoutViewModel(
             lastIntervalTransitionMs = System.currentTimeMillis()
             if (_ergEnabled.value) {
                 bleManager.setTargetPower(ergToken, scaledTarget(watts))
+            }
+        }
+
+        workoutEngine.onErgModeChanged = { ergOn ->
+            if (_ergEnabled.value) {
+                bleManager.setErgMode(ergToken, ergOn)
             }
         }
 
@@ -485,6 +497,15 @@ class WorkoutViewModel(
                 checkpointStore.clear()
                 _savedRideId.value = newId
                 Timber.tag("WORKOUT").i("Ride saved to history: ${workout.name} (id=$newId)")
+                workout.ftpTest?.let { kind ->
+                    val estimated = FtpEstimator.estimate(kind, records, workout)
+                    if (estimated != null) {
+                        _ftpTestResult.value = FtpTestResult(kind, oldFtp = ftp, newFtp = estimated)
+                        Timber.tag("WORKOUT").i("FTP test result: kind=$kind old=$ftp new=$estimated")
+                    } else {
+                        Timber.tag("WORKOUT").w("FTP test ($kind) couldn't be estimated — insufficient data")
+                    }
+                }
 
                 WorkItOutApplication.historyStravaUploader.scheduleAutoUpload(newId, exportState)
             } catch (t: Throwable) {
@@ -634,6 +655,7 @@ class WorkoutViewModel(
         workoutEngine.onTargetPowerChanged = null
         workoutEngine.onWorkoutStarted = null
         workoutEngine.onWorkoutStopped = null
+        workoutEngine.onErgModeChanged = null
         // releaseErgControl() sends the trainer to freewheel and stops the FE-C resender.
         // Idempotent — safe even if a newer VM has already preempted us.
         bleManager.releaseErgControl(ergToken)
@@ -662,6 +684,7 @@ class WorkoutViewModel(
 }
 
 /** Compact serializable data point for the JSON blob stored in completed_rides. */
+@SuppressLint("UnsafeOptInUsageError")
 @Serializable
 data class CompactDataPoint(
     val t: Int,   // timeSeconds

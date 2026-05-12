@@ -26,13 +26,26 @@ enum class PowerZone(val label: String, val colorHex: Long) {
     }
 }
 
+// Distinguishes an FTP-test workout from a regular workout.
+// Drives ERG-mode behavior in the engine and the post-ride estimation logic.
+enum class FtpTestKind { RAMP, TWENTY_MIN }
+
+// Result of an FTP test ride — surfaced to the user for accept/reject before applying.
+data class FtpTestResult(
+    val kind: FtpTestKind,
+    val oldFtp: Int,
+    val newFtp: Int
+)
+
 // One interval — canonical %FTP plus a snapshot watts value resolved at load time.
 data class WorkoutIntervalDef(
     val durationSeconds: Int,
     val targetPowerPercentFtp: Float,
     val targetPowerWatts: Int,
     val name: String,
-    val zone: PowerZone
+    val zone: PowerZone,
+    val ftpTestMeasurement: Boolean = false, // The ramp-up / 20-min effort that we estimate from
+    val ergDisabled: Boolean = false // Trainer drops out of ERG for this interval (20-min test)
 )
 
 data class WorkoutDefinition(
@@ -43,7 +56,8 @@ data class WorkoutDefinition(
     val totalDurationSeconds: Int = intervals.sumOf { it.durationSeconds },
     // Free ride: no ERG target, no time limit. Rider starts/stops manually; the live
     // graph just shows produced watts over elapsed time. Intervals must be empty.
-    val isFreeRide: Boolean = false
+    val isFreeRide: Boolean = false,
+    val ftpTest: FtpTestKind? = null
 )
 
 // Recomputes targetPowerWatts from each interval's canonical %FTP — call at load time so saved workouts track the user's current FTP.
