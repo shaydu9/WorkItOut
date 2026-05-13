@@ -1,5 +1,6 @@
 package com.cycling.workitout.ui.workout
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.ui.res.painterResource
@@ -30,6 +31,7 @@ import com.cycling.workitout.data.WorkoutProgress
 import com.cycling.workitout.data.WorkoutState
 import com.cycling.workitout.data.export.ExportState
 import com.cycling.workitout.data.strava.StravaRepository
+import com.cycling.workitout.ui.components.AppAlertDialog
 import com.cycling.workitout.ui.components.PowerDataPoint
 import com.cycling.workitout.ui.components.WorkoutInterval
 import com.cycling.workitout.ui.components.darken
@@ -53,6 +55,7 @@ fun WorkoutScreen(
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
     val stravaConnected by viewModel.stravaConnected.collectAsStateWithLifecycle()
     val stravaUploadState by viewModel.stravaUploadState.collectAsStateWithLifecycle()
+    val ftpTestResult by viewModel.ftpTestResult.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showEndDialog by remember { mutableStateOf(false) }
@@ -107,6 +110,18 @@ fun WorkoutScreen(
             onDisplayChange = viewModel::setDisplayAsPercent,
             modifier = Modifier.padding(padding)
         )
+
+        ftpTestResult?.let { result ->
+            AppAlertDialog(
+                onDismiss = viewModel::rejectFtpResult,
+                title = "FTP Test Complete",
+                confirmText = "Accept & Update",
+                onConfirm = viewModel::acceptFtpResult,
+                dismissText = "Keep old FTP"
+            ) {
+                Text("Estimated FTP: ${result.newFtp} W\nPrevious: ${result.oldFtp} W")
+            }
+        }
     }
 }
 
@@ -502,6 +517,7 @@ private fun StatsGrid(
     }
 }
 
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 private fun StatCell(
     label: String,

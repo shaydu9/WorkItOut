@@ -514,6 +514,23 @@ class WorkoutViewModel(
         }
     }
 
+    /** User accepted the new FTP — persist it to the profile and clear the dialog state. */
+    fun acceptFtpResult() {
+        val result = _ftpTestResult.value ?: return
+        viewModelScope.launch {
+            WorkItOutApplication.userProfileRepository.setFtp(result.newFtp)
+            Timber.tag("WORKOUT").i("FTP updated from ${result.oldFtp} → ${result.newFtp} (kind=${result.kind})")
+            _ftpTestResult.value = null
+        }
+    }
+
+    /** User rejected the result — keep the old FTP, just clear the dialog state. */
+    fun rejectFtpResult() {
+        val result = _ftpTestResult.value ?: return
+        Timber.tag("WORKOUT").i("FTP test result rejected (was ${result.oldFtp}, suggested ${result.newFtp})")
+        _ftpTestResult.value = null
+    }
+
     // ERG watchdog: detects "trainer locked to wrong target" (Mode A) and "trainer dropped to
     // freewheel" (Mode B). On confirmed deviation, fires the same off→on cycle the rider would
     // do manually — that's known-good and produces a fresh burst of Page 49 frames at 3 Hz.

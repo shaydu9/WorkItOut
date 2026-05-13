@@ -30,14 +30,19 @@ import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
 import com.cycling.workitout.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.preferences.ThemeMode
+import com.cycling.workitout.ui.components.AppPickerSheet
+import com.cycling.workitout.ui.components.PickerOption
+import com.cycling.workitout.workout.FtpTestGenerator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = SettingsViewModel(),
     onNavigateBack: () -> Unit,
-    onRepairDevices: () -> Unit
+    onRepairDevices: () -> Unit,
+    onStartWorkout: (WorkoutDefinition) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -77,6 +82,7 @@ fun SettingsScreen(
                 onRepairDevices()
             },
             onDeleteAccount = viewModel::deleteAccount,
+            onStartWorkout = onStartWorkout,
             modifier = Modifier.padding(paddingValues)
         )
     }
@@ -99,6 +105,7 @@ private fun SettingsScreenContent(
     onUploadPhoto: (android.content.Context, android.net.Uri) -> Unit,
     onRepairDevices: () -> Unit,
     onDeleteAccount: () -> Unit,
+    onStartWorkout: (WorkoutDefinition) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -109,6 +116,7 @@ private fun SettingsScreenContent(
     var showThemeDialog by remember { mutableStateOf(false) }
     var showPowerSmoothingDialog by remember { mutableStateOf(false) }
     var showFtpDialog by remember { mutableStateOf(false) }
+    var showFtpTestPicker by remember { mutableStateOf(false) }
     var showWeightDialog by remember { mutableStateOf(false) }
     var showMaxHrDialog by remember { mutableStateOf(false) }
     var showDisconnectStravaDialog by remember { mutableStateOf(false) }
@@ -121,253 +129,294 @@ private fun SettingsScreenContent(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
     ) {
-    LazyColumn(
-        modifier = (if (isTablet) Modifier.widthIn(max = 640.dp) else Modifier)
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item { SectionHeader("Training") }
-        item {
-            SettingsItem(
-                icon = Icons.Default.FitnessCenter,
-                title = "FTP",
-                subtitle = "${state.ftp}W",
-                onClick = { showFtpDialog = true }
-            )
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.MonitorWeight,
-                title = "Weight",
-                subtitle = "${state.weightKg} kg",
-                onClick = { showWeightDialog = true }
-            )
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.Favorite,
-                title = "Max Heart Rate",
-                subtitle = "${state.maxHeartRate} bpm",
-                onClick = { showMaxHrDialog = true }
-            )
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.ShowChart,
-                title = "Power Averaging",
-                subtitle = "${state.powerSmoothingSeconds}s average",
-                onClick = { showPowerSmoothingDialog = true }
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("Devices")
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.Bluetooth,
-                title = "Re-pair devices",
-                subtitle = "Run the pairing flow again",
-                onClick = onRepairDevices
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("Integrations")
-        }
-        item {
-            if (state.stravaConnected) {
+        LazyColumn(
+            modifier = (if (isTablet) Modifier.widthIn(max = 640.dp) else Modifier)
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item { SectionHeader("Training") }
+            item {
                 SettingsItem(
-                    icon = Icons.Default.CloudUpload,
-                    title = "Strava",
-                    subtitle = "Connected${state.stravaAthleteName?.let { " as $it" } ?: ""}",
-                    iconTint = Color(0xFFFC4C02),
-                    onClick = { showDisconnectStravaDialog = true }
+                    icon = Icons.Default.FitnessCenter,
+                    title = "FTP",
+                    subtitle = "${state.ftp}W",
+                    onClick = { showFtpDialog = true }
                 )
-            } else {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            "Strava",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFC4C02)
-                        )
-                        listOf(
-                            "Auto-upload completed rides",
-                            "Sync your heart rate, power, and cadence data",
-                            "View your activity on Strava after every workout"
-                        ).forEach { bullet ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text("•", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
-                                Text(bullet, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                        state.stravaConnectError?.let { msg ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer
-                                )
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Speed,
+                    title = "Take FTP test",
+                    subtitle = "Measure your threshold",
+                    onClick = {
+                        showFtpTestPicker = true
+                    }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.MonitorWeight,
+                    title = "Weight",
+                    subtitle = "${state.weightKg} kg",
+                    onClick = { showWeightDialog = true }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Favorite,
+                    title = "Max Heart Rate",
+                    subtitle = "${state.maxHeartRate} bpm",
+                    onClick = { showMaxHrDialog = true }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.ShowChart,
+                    title = "Power Averaging",
+                    subtitle = "${state.powerSmoothingSeconds}s average",
+                    onClick = { showPowerSmoothingDialog = true }
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Devices")
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Bluetooth,
+                    title = "Re-pair devices",
+                    subtitle = "Run the pairing flow again",
+                    onClick = onRepairDevices
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Integrations")
+            }
+            item {
+                if (state.stravaConnected) {
+                    SettingsItem(
+                        icon = Icons.Default.CloudUpload,
+                        title = "Strava",
+                        subtitle = "Connected${state.stravaAthleteName?.let { " as $it" } ?: ""}",
+                        iconTint = Color(0xFFFC4C02),
+                        onClick = { showDisconnectStravaDialog = true }
+                    )
+                } else {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                "Strava",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFC4C02)
+                            )
+                            listOf(
+                                "Auto-upload completed rides",
+                                "Sync your heart rate, power, and cadence data",
+                                "View your activity on Strava after every workout"
+                            ).forEach { bullet ->
+                                Row(verticalAlignment = Alignment.Top) {
                                     Text(
-                                        msg,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                        "•",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(end = 8.dp)
                                     )
-                                    TextButton(
-                                        onClick = onDismissStravaError,
-                                        modifier = Modifier.align(Alignment.End)
-                                    ) { Text("Dismiss") }
+                                    Text(bullet, style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
-                        }
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
+                            state.stravaConnectError?.let { msg ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            msg,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        TextButton(
+                                            onClick = onDismissStravaError,
+                                            modifier = Modifier.align(Alignment.End)
+                                        ) { Text("Dismiss") }
+                                    }
+                                }
+                            }
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.btn_strava_connect_with_orange),
+                                    contentDescription = "Connect with Strava",
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .clickable(onClick = onConnectStrava)
+                                )
+                            }
                             Image(
-                                painter = painterResource(R.drawable.btn_strava_connect_with_orange),
-                                contentDescription = "Connect with Strava",
+                                painter = painterResource(R.drawable.api_logo_pwrdby_strava_horiz_orange),
+                                contentDescription = "Powered by Strava",
                                 modifier = Modifier
-                                    .height(48.dp)
-                                    .clickable(onClick = onConnectStrava)
+                                    .align(Alignment.End)
+                                    .height(20.dp)
                             )
                         }
-                        Image(
-                            painter = painterResource(R.drawable.api_logo_pwrdby_strava_horiz_orange),
-                            contentDescription = "Powered by Strava",
-                            modifier = Modifier
-                                .align(Alignment.End)
-                                .height(20.dp)
-                        )
                     }
                 }
             }
-        }
-        if (state.stravaConnected) {
+            if (state.stravaConnected) {
+                item {
+                    SettingsToggleItem(
+                        icon = Icons.Default.CloudSync,
+                        title = "Auto-upload to Strava",
+                        subtitle = "Send rides to Strava as soon as you finish",
+                        iconTint = Color(0xFFFC4C02),
+                        checked = state.autoUploadToStravaOnFinish,
+                        onCheckedChange = onSetAutoUploadToStrava
+                    )
+                }
+            }
+
             item {
-                SettingsToggleItem(
-                    icon = Icons.Default.CloudSync,
-                    title = "Auto-upload to Strava",
-                    subtitle = "Send rides to Strava as soon as you finish",
-                    iconTint = Color(0xFFFC4C02),
-                    checked = state.autoUploadToStravaOnFinish,
-                    onCheckedChange = onSetAutoUploadToStrava
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Display")
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Brightness4,
+                    title = "Theme",
+                    subtitle = when (state.themeMode) {
+                        ThemeMode.LIGHT -> "Light"
+                        ThemeMode.DARK -> "Dark"
+                        ThemeMode.SYSTEM -> "System default"
+                    },
+                    onClick = { showThemeDialog = true }
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("Account")
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.AccountCircle,
+                    title = "Profile photo",
+                    subtitle = "Tap to change",
+                    photoUrl = state.photoUrl,
+                    onClick = { photoPicker.launch("image/*") }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.AccountCircle,
+                    title = "Signed in as",
+                    subtitle = when {
+                        state.currentUser?.isAnonymous == true -> "Anonymous"
+                        state.currentUser?.email != null -> state.currentUser.email
+                        else -> "—"
+                    },
+                    onClick = { }
+                )
+            }
+            item {
+
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Logout,
+                    title = "Sign out",
+                    subtitle = if (state.currentUser?.isAnonymous == true) {
+                        "Anonymous data won't transfer to a new account"
+                    } else {
+                        "Sign out of WorkItOut"
+                    },
+                    iconTint = MaterialTheme.colorScheme.error,
+                    onClick = { showSignOutDialog = true }
+                )
+            }
+
+            item {
+                SettingsItem(
+                    icon = Icons.Default.DeleteForever,
+                    title = "Delete account",
+                    subtitle = "Permanently delete your account and all data",
+                    iconTint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        showDeleteAccountDialog = true
+                    }
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("About")
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Info,
+                    title = "WorkItOut",
+                    subtitle = "Version 1.0.0",
+                    onClick = { }
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = Icons.Default.PrivacyTip,
+                    title = "Privacy Policy",
+                    subtitle = "shaydu9.github.io/WorkItOut/privacy.html",
+                    onClick = {
+                        val intent = Intent(
+                            Intent.ACTION_VIEW,
+                            "https://shaydu9.github.io/WorkItOut/privacy.html".toUri()
+                        )
+                        ContextCompat.startActivity(context, intent, null)
+                    }
                 )
             }
         }
-
-        item {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("Display")
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.Brightness4,
-                title = "Theme",
-                subtitle = when (state.themeMode) {
-                    ThemeMode.LIGHT -> "Light"
-                    ThemeMode.DARK -> "Dark"
-                    ThemeMode.SYSTEM -> "System default"
-                },
-                onClick = { showThemeDialog = true }
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("Account")
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.AccountCircle,
-                title = "Profile photo",
-                subtitle = "Tap to change",
-                photoUrl = state.photoUrl,
-                onClick = { photoPicker.launch("image/*") }
-            )
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.AccountCircle,
-                title = "Signed in as",
-                subtitle = when {
-                    state.currentUser?.isAnonymous == true -> "Anonymous"
-                    state.currentUser?.email != null -> state.currentUser.email
-                    else -> "—"
-                },
-                onClick = { }
-            )
-        }
-        item {
-
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.Logout,
-                title = "Sign out",
-                subtitle = if (state.currentUser?.isAnonymous == true) {
-                    "Anonymous data won't transfer to a new account"
-                } else {
-                    "Sign out of WorkItOut"
-                },
-                iconTint = MaterialTheme.colorScheme.error,
-                onClick = { showSignOutDialog = true }
-            )
-        }
-
-        item {
-            SettingsItem(
-                icon = Icons.Default.DeleteForever,
-                title = "Delete account",
-                subtitle = "Permanently delete your account and all data",
-                iconTint = MaterialTheme.colorScheme.error,
-                onClick = {
-                    showDeleteAccountDialog = true
-                }
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("About")
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.Info,
-                title = "WorkItOut",
-                subtitle = "Version 1.0.0",
-                onClick = { }
-            )
-        }
-        item {
-            SettingsItem(
-                icon = Icons.Default.PrivacyTip,
-                title = "Privacy Policy",
-                subtitle = "shaydu9.github.io/WorkItOut/privacy.html",
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, "https://shaydu9.github.io/WorkItOut/privacy.html".toUri())
-                    ContextCompat.startActivity(context, intent, null)
-                }
-            )
-        }
-    }
     } // end Box
+
+    if (showFtpTestPicker) {
+        AppPickerSheet(
+            title = "Take an FTP test",
+            subtitle = "Make sure your trainer is connected.",
+            options = listOf(
+                PickerOption(
+                    title = "ramp test",
+                    description = "~25 min · 1-minute steps until you can't hold cadence."
+                ) {
+                    onStartWorkout(FtpTestGenerator.ramp(state.ftp))
+                },
+                PickerOption(
+                    title = "20-minute test",
+                    description = "~50 min · ERG off for the 20-min effort — you set the pace."
+                ) {
+                    onStartWorkout(FtpTestGenerator.twentyMin(state.ftp))
+                }
+            ),
+            onDismiss = {
+                showFtpTestPicker = false
+            }
+        )
+    }
 
     if (showThemeDialog) {
         ThemeSelectionDialog(
@@ -379,6 +428,7 @@ private fun SettingsScreenContent(
             }
         )
     }
+
 
     if (showPowerSmoothingDialog) {
         PowerSmoothingDialog(

@@ -1,5 +1,7 @@
 package com.cycling.workitout.ui.navigation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,10 +33,12 @@ import com.cycling.workitout.ui.home.HomeViewModel
 import com.cycling.workitout.ui.library.LibraryScreen
 import com.cycling.workitout.ui.library.LibraryViewModel
 import com.cycling.workitout.ui.settings.SettingsScreen
+import com.cycling.workitout.ui.settings.SettingsViewModel
 import com.cycling.workitout.ui.workout.WorkoutScreen
 import com.cycling.workitout.ui.workout.WorkoutViewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
@@ -64,7 +68,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
     val prefs = WorkItOutApplication.themePreferences
     
     if (currentUser == null) {
-        val context = androidx.compose.ui.platform.LocalContext.current
+        val context = LocalContext.current
         val loginViewModel = remember { LoginViewModel(authRepository) }
 
         val googleSignInClient = remember {
@@ -81,15 +85,15 @@ fun WorkItOutNavigation(bleManager: BleManager) {
             googleSignInClient.signOut()
         }
 
-        val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-            contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        val launcher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult()
         ) { result ->
             try {
                 val account = GoogleSignIn
                     .getSignedInAccountFromIntent(result.data)
-                    .getResult(com.google.android.gms.common.api.ApiException::class.java)
+                    .getResult(ApiException::class.java)
                 account.idToken?.let { loginViewModel.signInWithGoogle(it) }
-            } catch (e: com.google.android.gms.common.api.ApiException) {
+            } catch (e: ApiException) {
                 Timber.tag("AUTH").w(e, "Google sign-in failed")
             }
         }
@@ -180,11 +184,14 @@ fun WorkItOutNavigation(bleManager: BleManager) {
             )
             // Navigate to ride detail once saved; pop workout so Back goes Home, not back into a stopped workout.
             val savedRideId by viewModel.savedRideId.collectAsStateWithLifecycle()
-            LaunchedEffect(savedRideId) {
-                savedRideId?.let { id ->
-                    WorkoutSession.pendingWorkout = null
-                    navController.navigate(Screen.RideDetail.withId(id)) {
-                        popUpTo(Screen.ActiveWorkout.route) { inclusive = true }
+            val ftpTestResult by viewModel.ftpTestResult.collectAsStateWithLifecycle()
+            LaunchedEffect(savedRideId, ftpTestResult) {
+                if (ftpTestResult == null) {
+                    savedRideId?.let { id ->
+                        WorkoutSession.pendingWorkout = null
+                        navController.navigate(Screen.RideDetail.withId(id)) {
+                            popUpTo(Screen.ActiveWorkout.route) { inclusive = true }
+                        }
                     }
                 }
             }
@@ -198,7 +205,7 @@ fun WorkItOutNavigation(bleManager: BleManager) {
         }
 
         composable(Screen.Settings.route) {
-            val viewModel = com.cycling.workitout.ui.settings.SettingsViewModel(bleManager)
+            val viewModel = SettingsViewModel(bleManager)
             SettingsScreen(
                 viewModel = viewModel,
                 onNavigateBack = {
@@ -208,6 +215,10 @@ fun WorkItOutNavigation(bleManager: BleManager) {
                     navController.navigate(Screen.FirstRunPairing.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
+                },
+                onStartWorkout = { workout ->
+                    WorkoutSession.pendingWorkout = workout
+                    navController.navigate(Screen.ActiveWorkout.route)
                 }
             )
         }

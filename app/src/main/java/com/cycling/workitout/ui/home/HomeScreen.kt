@@ -77,12 +77,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cycling.workitout.data.DeviceType
 import com.cycling.workitout.data.WorkoutDefinition
 import com.cycling.workitout.data.scaledByIntensity
+import com.cycling.workitout.ui.components.AppPickerSheet
 import com.cycling.workitout.ui.components.DevicePairingDialog
 import com.cycling.workitout.ui.components.IntensityPill
+import com.cycling.workitout.ui.components.PickerOption
 import com.cycling.workitout.ui.components.WorkoutPreviewChart
 import com.cycling.workitout.ui.components.WorkoutPreviewSheet
 import com.cycling.workitout.ui.components.WorkoutRecoveryDialog
 import com.cycling.workitout.ui.components.rememberBlePermissionState
+import com.cycling.workitout.workout.FtpTestGenerator
 import timber.log.Timber
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -107,6 +110,8 @@ fun HomeScreen(
     val displayAsPercent by viewModel.displayAsPercent.collectAsStateWithLifecycle()
     // Dialog State
     var pairingDialogDeviceType by remember { mutableStateOf<DeviceType?>(null) }
+    var showChooseSheet by remember { mutableStateOf(false) }
+    var showFtpTestPicker by remember { mutableStateOf(false) }
     val withBlePermission = rememberBlePermissionState()
     LaunchedEffect(Unit) {
         withBlePermission {
@@ -171,8 +176,69 @@ fun HomeScreen(
             onTrainerTap = onTrainerTap,
             onCadenceTap = onCadenceTap,
             onHrTap = onHrTap,
+            onShowMoreOptions = { showChooseSheet = true },
             modifier = Modifier.padding(padding)
         )
+
+        if (showChooseSheet) {
+            AppPickerSheet(
+                title = "Choose your workout",
+                options = listOf(
+                    PickerOption(
+                        title = "Describe your own workout",
+                        description = "Tell the AI what you want = duration, focus, anything!",
+                    ) {
+                        viewModel.openCustomPrompt()
+                    },
+                    PickerOption(
+                        title = "Free ride",
+                        description = "No targets, no time limit. Ride and stop when you want."
+                    ) {
+                        onStartWorkout(
+                            WorkoutDefinition(
+                                id = "free_ride",
+                                name = "Free Ride",
+                                description = "",
+                                intervals = emptyList(),
+                                totalDurationSeconds = 0,
+                                isFreeRide = true
+                            )
+                        )
+                    },
+                    PickerOption(
+                        title = "Take FTP test",
+                        description = "Measure your threshold. Updates your FTP if you accept."
+                    ) {
+                        showFtpTestPicker = true
+                    }
+                ),
+                onDismiss = {
+                    showChooseSheet = false
+                }
+            )
+        }
+
+        if (showFtpTestPicker) {
+            AppPickerSheet(
+                title = "Take an FTP test",
+                subtitle = "Make sure your trainer is connected.",
+                options = listOf(
+                    PickerOption(
+                        title = "Ramp Test",
+                        description = "~25 min · 1-minute steps until you can't hold cadence."
+                    ) {
+                        onStartWorkout(FtpTestGenerator.ramp(ftp))
+                    },
+                    PickerOption(
+                        title = "20-minutes test",
+                        description = "~50 min · ERG off for the 20-min effort — you set the pace."
+                    ) {
+                        onStartWorkout(FtpTestGenerator.twentyMin(ftp))
+                    }
+                ),
+                onDismiss = { showFtpTestPicker = false}
+            )
+        }
 
         pairingDialogDeviceType?.let { deviceType ->
             val devices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
@@ -226,6 +292,7 @@ private fun HomeScreenContent(
     onTrainerTap: () -> Unit,
     onCadenceTap: () -> Unit,
     onHrTap: () -> Unit,
+    onShowMoreOptions: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isTablet = LocalConfiguration.current.screenWidthDp >= 600
@@ -302,35 +369,11 @@ private fun HomeScreenContent(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
-                onClick = onOpenCustomPrompt,
-                enabled = !state.isGenerating,
+            TextButton(
+                onClick = onShowMoreOptions,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Describe your own workout", fontWeight = FontWeight.Medium)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    onStartWorkout(
-                        WorkoutDefinition(
-                            id = "free-ride",
-                            name = "Free Ride",
-                            description = "",
-                            intervals = emptyList(),
-                            totalDurationSeconds = 0,
-                            isFreeRide = true
-                        )
-                    )
-                },
-                enabled = !state.isGenerating,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Free ride", fontWeight = FontWeight.Medium)
+                Text("Choose your workout")
             }
 
             Button(
